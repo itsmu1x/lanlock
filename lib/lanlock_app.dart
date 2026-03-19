@@ -12,8 +12,12 @@ class LanlockApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.deepPurple,
+          brightness: Brightness.dark,
+        ),
         scaffoldBackgroundColor: const Color(0xFF070A12),
+        canvasColor: const Color(0xFF070A12),
       ),
       home: const ProfilesPage(),
     );

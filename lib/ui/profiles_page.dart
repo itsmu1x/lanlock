@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:local_auth/local_auth.dart';
 
 import '../lanlock_repository.dart';
@@ -327,8 +329,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                       child: ProfileCard(
                                         name: parsed.leaf,
                                         subtitle: parsed.subPath,
-                                        onTap: () {
-                                          Navigator.push(
+                                        onTap: () async {
+                                          final removed = await Navigator.push<bool>(
                                             context,
                                             MaterialPageRoute(
                                               builder: (_) => ProfileDetailPage(
@@ -337,6 +339,12 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                               ),
                                             ),
                                           );
+                                          if (removed == true && mounted) {
+                                            await _refresh();
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              const SnackBar(content: Text('Profile deleted')),
+                                            );
+                                          }
                                         },
                                       ),
                                     );
@@ -450,111 +458,21 @@ class _ProfilesPageState extends State<ProfilesPage> {
     try {
       final payload = await _repo.exportBackupPayload();
       final json = const JsonEncoder.withIndent('  ').convert(payload);
+      final bytes = Uint8List.fromList(utf8.encode(json));
+      final now = DateTime.now();
+      final name =
+          'lanlock_backup_${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}.json';
+      final path = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save LanLock backup',
+        fileName: name,
+        type: FileType.custom,
+        allowedExtensions: const ['json'],
+        bytes: bytes,
+      );
+      if (path == null) return;
       if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (ctx) => Theme(
-          data: Theme.of(ctx).copyWith(
-            colorScheme: Theme.of(ctx).colorScheme.copyWith(
-              brightness: Brightness.dark,
-              surface: const Color(0xFF0F1324),
-              onSurface: Colors.white,
-              onPrimary: Colors.white,
-              onSecondary: Colors.white,
-            ),
-            textTheme: Theme.of(ctx).textTheme.apply(
-              bodyColor: Colors.white,
-              displayColor: Colors.white,
-            ),
-            listTileTheme: const ListTileThemeData(
-              textColor: Colors.white,
-              iconColor: Colors.white70,
-            ),
-            inputDecorationTheme: InputDecorationTheme(
-              hintStyle: const TextStyle(color: Colors.white54),
-              filled: true,
-              fillColor: Colors.white.withOpacity(0.06),
-            ),
-            dialogTheme: const DialogThemeData(
-              titleTextStyle: TextStyle(
-                color: Colors.white,
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-              ),
-              contentTextStyle: TextStyle(color: Colors.white70, fontSize: 14),
-            ),
-          ),
-          child: AlertDialog(
-            surfaceTintColor: Colors.transparent,
-            backgroundColor: const Color(0xFF0F1324),
-            title: const Text(
-              'Export Backup',
-              style: TextStyle(color: Colors.white),
-            ),
-            content: SizedBox(
-              width: MediaQuery.of(ctx).size.width > 700
-                  ? 620
-                  : MediaQuery.of(ctx).size.width * 0.88,
-              child: DefaultTextStyle.merge(
-                style: const TextStyle(color: Colors.white70),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Copy this JSON and store it in a safe place.',
-                      style: TextStyle(color: Colors.white70),
-                    ),
-                    const SizedBox(height: 10),
-                    Container(
-                      constraints: const BoxConstraints(maxHeight: 280),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.22),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.1),
-                        ),
-                      ),
-                      child: SingleChildScrollView(
-                        child: SelectableText(
-                          json,
-                          style: const TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 12,
-                            color: Colors.white70,
-                            height: 1.35,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                style: TextButton.styleFrom(foregroundColor: Colors.white),
-                onPressed: () async {
-                  await Clipboard.setData(ClipboardData(text: json));
-                  if (!ctx.mounted) return;
-                  ScaffoldMessenger.of(ctx).showSnackBar(
-                    const SnackBar(content: Text('Backup JSON copied')),
-                  );
-                },
-                child: const Text('Copy JSON'),
-              ),
-              FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.deepPurpleAccent.withOpacity(0.92),
-                  foregroundColor: Colors.white,
-                ),
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Close'),
-              ),
-            ],
-          ),
-        ),
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Backup file saved: $path')),
       );
     } catch (e) {
       if (!mounted) return;
@@ -565,7 +483,6 @@ class _ProfilesPageState extends State<ProfilesPage> {
   }
 
   Future<void> _openImportDialog() async {
-    final jsonController = TextEditingController();
     var replaceExisting = false;
 
     final action = await showDialog<bool>(
@@ -614,66 +531,32 @@ class _ProfilesPageState extends State<ProfilesPage> {
               'Import Backup',
               style: TextStyle(color: Colors.white),
             ),
-            content: SizedBox(
-              width: MediaQuery.of(ctx).size.width > 700
-                  ? 620
-                  : MediaQuery.of(ctx).size.width * 0.88,
-              child: DefaultTextStyle.merge(
-                style: const TextStyle(color: Colors.white70),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Paste backup JSON here.',
-                      style: TextStyle(color: Colors.white70),
+            content: DefaultTextStyle.merge(
+              style: const TextStyle(color: Colors.white70),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Choose a backup .json file to import.',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                  const SizedBox(height: 10),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    activeColor: Colors.deepPurpleAccent,
+                    value: replaceExisting,
+                    onChanged: (v) => setStateDialog(() => replaceExisting = v),
+                    title: const Text(
+                      'Replace existing profiles with same name',
+                      style: TextStyle(color: Colors.white),
                     ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: jsonController,
-                      minLines: 8,
-                      maxLines: 12,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: InputDecoration(
-                        hintText: '{"format":"lanlock-backup-v1", ...}',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(
-                            color: Colors.white.withOpacity(0.10),
-                          ),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(
-                            color: Colors.white.withOpacity(0.10),
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(
-                            color: Colors.deepPurpleAccent.withOpacity(0.85),
-                          ),
-                        ),
-                      ),
+                    subtitle: const Text(
+                      'Off = skip duplicates. On = update password/metadata.',
+                      style: TextStyle(color: Colors.white60),
                     ),
-                    const SizedBox(height: 10),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      activeColor: Colors.deepPurpleAccent,
-                      value: replaceExisting,
-                      onChanged: (v) =>
-                          setStateDialog(() => replaceExisting = v),
-                      title: const Text(
-                        'Replace existing profiles with same name',
-                        style: TextStyle(color: Colors.white),
-                      ),
-                      subtitle: const Text(
-                        'Off = skip duplicates. On = update password/metadata.',
-                        style: TextStyle(color: Colors.white60),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
             actions: [
@@ -701,10 +584,18 @@ class _ProfilesPageState extends State<ProfilesPage> {
     }
 
     try {
-      final raw = jsonController.text.trim();
-      if (raw.isEmpty) {
-        throw ArgumentError('Backup JSON is empty.');
+      final file = await FilePicker.platform.pickFiles(
+        dialogTitle: 'Select LanLock backup file',
+        type: FileType.custom,
+        allowedExtensions: const ['json'],
+        withData: false,
+      );
+      if (file == null || file.files.isEmpty) return;
+      final path = file.files.single.path;
+      if (path == null || path.isEmpty) {
+        throw ArgumentError('Could not read selected file path.');
       }
+      final raw = await File(path).readAsString();
       final decoded = jsonDecode(raw);
       if (decoded is! Map<String, dynamic>) {
         throw ArgumentError('Backup JSON root must be an object.');
@@ -727,9 +618,6 @@ class _ProfilesPageState extends State<ProfilesPage> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Import failed: $e')));
-    } finally {
-      // Intentionally not disposing here to avoid a race with dialog close
-      // animations where TextField may still read the controller briefly.
     }
   }
 }

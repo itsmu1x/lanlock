@@ -128,6 +128,17 @@ CREATE TABLE meta_values(
     return ProfileSummary(id: r['id'] as int, name: r['name'] as String);
   }
 
+  /// Deletes the profile and all its metadata (SQLite foreign key CASCADE).
+  Future<void> deleteProfile(int profileId) async {
+    final db = await database;
+    final n = await db.delete(
+      'profiles',
+      where: 'id = ?',
+      whereArgs: [profileId],
+    );
+    if (n == 0) throw StateError('Profile not found');
+  }
+
   Future<int> createProfile({
     required String name,
     required String password,

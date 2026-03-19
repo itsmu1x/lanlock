@@ -138,7 +138,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                         child: ListView(
                           padding: const EdgeInsets.fromLTRB(18, 8, 18, 120),
                           children: [
-                            if (_profiles.isNotEmpty)
+                            if (_profiles.isEmpty)
+                              _EmptyProfilesState(hasQuery: _query.trim().isNotEmpty)
+                            else ...[
                               Padding(
                                 padding: const EdgeInsets.only(bottom: 12),
                                 child: Text(
@@ -148,39 +150,40 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                       ),
                                 ),
                               ),
-                            for (final entry in grouped.entries) ...[
-                              Padding(
-                                padding: const EdgeInsets.only(top: 4, bottom: 10),
-                                child: Text(
-                                  entry.key,
-                                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                        color: Colors.white70,
-                                        fontWeight: FontWeight.w800,
-                                        letterSpacing: 0.2,
-                                      ),
-                                ),
-                              ),
-                              ...entry.value.map((p) {
-                                final parsed = _splitProfilePath(p.name);
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 10),
-                                  child: ProfileCard(
-                                    name: parsed.leaf,
-                                    subtitle: parsed.subPath,
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) => ProfileDetailPage(
-                                            profileId: p.id,
-                                            profileName: p.name,
-                                          ),
+                              for (final entry in grouped.entries) ...[
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4, bottom: 10),
+                                  child: Text(
+                                    entry.key,
+                                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                          color: Colors.white70,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 0.2,
                                         ),
-                                      );
-                                    },
                                   ),
-                                );
-                              }),
+                                ),
+                                ...entry.value.map((p) {
+                                  final parsed = _splitProfilePath(p.name);
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 10),
+                                    child: ProfileCard(
+                                      name: parsed.leaf,
+                                      subtitle: parsed.subPath,
+                                      onTap: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => ProfileDetailPage(
+                                              profileId: p.id,
+                                              profileName: p.name,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  );
+                                }),
+                              ],
                             ],
                           ],
                         ),
@@ -204,6 +207,92 @@ class _ProfilesPageState extends State<ProfilesPage> {
         foregroundColor: Colors.white,
         icon: const Icon(Icons.add_rounded),
         label: const Text('Add'),
+      ),
+    );
+  }
+}
+
+class _EmptyProfilesState extends StatelessWidget {
+  const _EmptyProfilesState({required this.hasQuery});
+
+  final bool hasQuery;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = hasQuery ? 'No matches found' : 'No passwords yet';
+    final subtitle = hasQuery
+        ? 'Try another search phrase or clear the search.'
+        : 'Create your first profile to start storing passwords securely.';
+
+    return Container(
+      margin: const EdgeInsets.only(top: 18),
+      padding: const EdgeInsets.fromLTRB(18, 22, 18, 20),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withOpacity(0.12)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.22),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.deepPurpleAccent.withOpacity(0.35),
+                  Colors.indigoAccent.withOpacity(0.24),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withOpacity(0.14)),
+            ),
+            child: Icon(
+              hasQuery ? Icons.search_off_rounded : Icons.lock_outline_rounded,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.2,
+                ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            subtitle,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Colors.white70,
+                  height: 1.35,
+                ),
+            textAlign: TextAlign.center,
+          ),
+          if (!hasQuery) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Tap the Add button to create one.',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: Colors.white60,
+                    fontWeight: FontWeight.w600,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ],
       ),
     );
   }

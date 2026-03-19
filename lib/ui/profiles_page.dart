@@ -78,14 +78,34 @@ class _ProfilesPageState extends State<ProfilesPage> {
                     Row(
                       children: [
                         Expanded(
-                          child: Text(
-                            'Profiles',
-                            style: Theme.of(context).textTheme.headlineSmall
-                                ?.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.3,
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(10),
+                                  color: Colors.white.withValues(alpha: 0.06),
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.12),
+                                  ),
                                 ),
+                                padding: const EdgeInsets.all(4),
+                                child: Image.asset(
+                                  'lib/assets/lanlock_logo.png',
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                'LanLock',
+                                style: Theme.of(context).textTheme.headlineSmall
+                                    ?.copyWith(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.3,
+                                    ),
+                              ),
+                            ],
                           ),
                         ),
                         IconButton(
@@ -508,7 +528,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
             ),
           ),
           child: AlertDialog(
-            insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 18,
+            ),
             scrollable: true,
             surfaceTintColor: Colors.transparent,
             backgroundColor: const Color(0xFF0F1324),
@@ -563,7 +586,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                       contentPadding: EdgeInsets.zero,
                       activeColor: Colors.deepPurpleAccent,
                       value: replaceExisting,
-                      onChanged: (v) => setStateDialog(() => replaceExisting = v),
+                      onChanged: (v) =>
+                          setStateDialog(() => replaceExisting = v),
                       title: const Text(
                         'Replace existing profiles with same name',
                         style: TextStyle(color: Colors.white),

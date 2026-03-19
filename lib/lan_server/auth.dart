@@ -15,6 +15,8 @@ class ServerPasswordStore {
   static const _saltKey = 'lanlock_server_pw_salt_v1';
   static const _hashKey = 'lanlock_server_pw_hash_v1';
   static const _itersKey = 'lanlock_server_pw_iters_v1';
+  static const _encSaltKey = 'lanlock_master_enc_salt_v1';
+  static const _encItersKey = 'lanlock_master_enc_iters_v1';
 
   Future<bool> hasPassword() async {
     final salt = await _storage.read(key: _saltKey);
@@ -37,9 +39,14 @@ class ServerPasswordStore {
       dkLen: 32,
     );
 
+    final encSalt = Uint8List.fromList(List<int>.generate(16, (_) => rnd.nextInt(256)));
+    const encIters = 210000;
+
     await _storage.write(key: _saltKey, value: base64Encode(salt));
     await _storage.write(key: _hashKey, value: base64Encode(dk));
     await _storage.write(key: _itersKey, value: iters.toString());
+    await _storage.write(key: _encSaltKey, value: base64Encode(encSalt));
+    await _storage.write(key: _encItersKey, value: encIters.toString());
   }
 
   Future<bool> verifyPassword(String password) async {
@@ -60,6 +67,22 @@ class ServerPasswordStore {
     );
 
     return _constantTimeEquals(expected, dk);
+  }
+
+  Future<Uint8List> deriveEncryptionKey(String password) async {
+    final encSaltB64 = await _storage.read(key: _encSaltKey);
+    final encItersStr = await _storage.read(key: _encItersKey);
+    if (encSaltB64 == null) {
+      throw StateError('Master password is not configured.');
+    }
+    final encSalt = Uint8List.fromList(base64Decode(encSaltB64));
+    final encIters = int.tryParse(encItersStr ?? '') ?? 210000;
+    return _pbkdf2HmacSha256(
+      password: utf8.encode(password),
+      salt: encSalt,
+      iterations: encIters,
+      dkLen: 32,
+    );
   }
 
   // PBKDF2-HMAC-SHA256, RFC 8018.

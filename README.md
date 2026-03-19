@@ -20,6 +20,14 @@ It helps you:
 
 This project is focused on local control, simple flow, and practical security.
 
+## Security model (important)
+
+- LanLock uses one **master password**.
+- This same master password is also used for LAN web login.
+- Secrets (passwords + metadata values) are encrypted and stored in SQLite.
+- App stores a derived encryption key in secure storage for fast startup.
+- If this stored key is missing/lost, app asks master password again.
+
 ## Main features
 
 - Profile list with search
@@ -29,6 +37,7 @@ This project is focused on local control, simple flow, and practical security.
 - Add profile with generated or custom password
 - LAN web interface (read-focused)
 - Backup export/import
+- Master-password based encryption flow
 
 ## Requirements
 
@@ -81,5 +90,14 @@ flutter run
 ## Notes
 
 - Data is local on your device.
-- If you uninstall app or clear app data, you will lose access to stored data.
+- If you uninstall app or clear app data, you can lose access to stored data.
 - Please export backups often if your passwords are important.
+- Release build needs `INTERNET` permission (already added in Android manifest) for LAN server.
+
+## Quick flow
+
+1. First start:
+   - If there is no master password, app asks user to create one.
+2. Next starts:
+   - If stored key exists, app opens directly.
+   - If key is missing, app asks master password.

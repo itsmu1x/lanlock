@@ -115,14 +115,19 @@ class _ProfilesPageState extends State<ProfilesPage> {
                             Navigator.push(
                               context,
                               PageRouteBuilder<void>(
-                                transitionDuration: const Duration(milliseconds: 130),
-                                reverseTransitionDuration: const Duration(milliseconds: 110),
-                                pageBuilder: (_, animation, __) => FadeTransition(
-                                  opacity: animation,
-                                  child: ServerPanelPage(
-                                    controller: _serverController,
-                                  ),
+                                transitionDuration: const Duration(
+                                  milliseconds: 130,
                                 ),
+                                reverseTransitionDuration: const Duration(
+                                  milliseconds: 110,
+                                ),
+                                pageBuilder: (_, animation, __) =>
+                                    FadeTransition(
+                                      opacity: animation,
+                                      child: ServerPanelPage(
+                                        controller: _serverController,
+                                      ),
+                                    ),
                               ),
                             );
                           },
@@ -236,18 +241,26 @@ class _ProfilesPageState extends State<ProfilesPage> {
                               for (final entry in grouped.entries) ...[
                                 Builder(
                                   builder: (context) {
-                                    final isExpanded = _expandedFolders.contains(entry.key);
+                                    final isExpanded = _expandedFolders
+                                        .contains(entry.key);
                                     final isCollapsed = !isExpanded;
                                     return Padding(
-                                      padding: const EdgeInsets.only(top: 4, bottom: 10),
+                                      padding: const EdgeInsets.only(
+                                        top: 4,
+                                        bottom: 10,
+                                      ),
                                       child: Material(
                                         color: Colors.transparent,
                                         child: InkWell(
-                                          borderRadius: BorderRadius.circular(12),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
                                           onTap: () {
                                             setState(() {
                                               if (isExpanded) {
-                                                _expandedFolders.remove(entry.key);
+                                                _expandedFolders.remove(
+                                                  entry.key,
+                                                );
                                               } else {
                                                 _expandedFolders.add(entry.key);
                                               }
@@ -268,23 +281,29 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                                         .titleSmall
                                                         ?.copyWith(
                                                           color: Colors.white70,
-                                                          fontWeight: FontWeight.w800,
+                                                          fontWeight:
+                                                              FontWeight.w800,
                                                           letterSpacing: 0.2,
                                                         ),
                                                   ),
                                                 ),
                                                 Text(
                                                   '${entry.value.length}',
-                                                  style: Theme.of(context).textTheme.labelSmall
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .labelSmall
                                                       ?.copyWith(
                                                         color: Colors.white54,
-                                                        fontWeight: FontWeight.w700,
+                                                        fontWeight:
+                                                            FontWeight.w700,
                                                       ),
                                                 ),
                                                 const SizedBox(width: 8),
                                                 AnimatedRotation(
                                                   turns: isCollapsed ? 0 : 0.25,
-                                                  duration: const Duration(milliseconds: 180),
+                                                  duration: const Duration(
+                                                    milliseconds: 180,
+                                                  ),
                                                   child: const Icon(
                                                     Icons.chevron_right_rounded,
                                                     color: Colors.white60,
@@ -302,7 +321,9 @@ class _ProfilesPageState extends State<ProfilesPage> {
                                   ...entry.value.map((p) {
                                     final parsed = _splitProfilePath(p.name);
                                     return Padding(
-                                      padding: const EdgeInsets.only(bottom: 10),
+                                      padding: const EdgeInsets.only(
+                                        bottom: 10,
+                                      ),
                                       child: ProfileCard(
                                         name: parsed.leaf,
                                         subtitle: parsed.subPath,

@@ -6,45 +6,64 @@ import 'package:encrypt/encrypt.dart' as encrypt;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class LanlockEncryptedBytes {
-  LanlockEncryptedBytes({
-    required this.ciphertext,
-    required this.iv,
-  });
+  LanlockEncryptedBytes({required this.ciphertext, required this.iv});
 
   final Uint8List ciphertext;
   final Uint8List iv;
 }
 
 class LanlockCrypto {
-  LanlockCrypto({FlutterSecureStorage? storage})
-      : _storage = storage ?? const FlutterSecureStorage();
+  static Uint8List? _activeSessionKey;
+  static const FlutterSecureStorage _storage = FlutterSecureStorage();
+  static const String _persistedSessionKeyStorageKey =
+      'lanlock_persisted_session_key_v1';
 
-  static const String _aesKeyStorageKey = 'lanlock_aes_key_v1';
+  static bool get isUnlocked => _activeSessionKey != null;
 
-  final FlutterSecureStorage _storage;
-
-  encrypt.Key? _cachedKey;
-
-  Future<encrypt.Key> _getOrCreateAesKey() async {
-    if (_cachedKey != null) return _cachedKey!;
-
-    final stored = await _storage.read(key: _aesKeyStorageKey);
-    if (stored != null) {
-      final keyBytes = base64Decode(stored);
-      _cachedKey = encrypt.Key(Uint8List.fromList(keyBytes));
-      return _cachedKey!;
+  static void setSessionKey(Uint8List key) {
+    if (key.length != 32) {
+      throw ArgumentError('Session key must be 32 bytes.');
     }
+    _activeSessionKey = Uint8List.fromList(key);
+  }
 
-    final rnd = Random.secure();
-    final keyBytes = List<int>.generate(32, (_) => rnd.nextInt(256));
-    final key = encrypt.Key(Uint8List.fromList(keyBytes));
-    await _storage.write(key: _aesKeyStorageKey, value: base64Encode(keyBytes));
-    _cachedKey = key;
-    return key;
+  static Future<void> persistSessionKey(Uint8List key) async {
+    if (key.length != 32) {
+      throw ArgumentError('Session key must be 32 bytes.');
+    }
+    await _storage.write(
+      key: _persistedSessionKeyStorageKey,
+      value: base64Encode(key),
+    );
+  }
+
+  static Future<bool> tryRestoreSessionKey() async {
+    final encoded = await _storage.read(key: _persistedSessionKeyStorageKey);
+    if (encoded == null || encoded.trim().isEmpty) return false;
+    final bytes = base64Decode(encoded);
+    if (bytes.length != 32) return false;
+    _activeSessionKey = Uint8List.fromList(bytes);
+    return true;
+  }
+
+  static Future<void> clearPersistedSessionKey() async {
+    await _storage.delete(key: _persistedSessionKeyStorageKey);
+  }
+
+  static void clearSessionKey() {
+    _activeSessionKey = null;
+  }
+
+  Future<encrypt.Key> _requireAesKey() async {
+    final key = _activeSessionKey;
+    if (key == null) {
+      throw StateError('Master password is required. Unlock the app first.');
+    }
+    return encrypt.Key(Uint8List.fromList(key));
   }
 
   Future<LanlockEncryptedBytes> encryptString(String plaintext) async {
-    final key = await _getOrCreateAesKey();
+    final key = await _requireAesKey();
 
     final rnd = Random.secure();
     final ivBytes = List<int>.generate(16, (_) => rnd.nextInt(256));
@@ -63,7 +82,7 @@ class LanlockCrypto {
   }
 
   Future<String> decryptString(LanlockEncryptedBytes payload) async {
-    final key = await _getOrCreateAesKey();
+    final key = await _requireAesKey();
 
     final encrypter = encrypt.Encrypter(
       encrypt.AES(key, mode: encrypt.AESMode.cbc, padding: 'PKCS7'),
@@ -77,4 +96,3 @@ class LanlockCrypto {
     return decrypted;
   }
 }
-

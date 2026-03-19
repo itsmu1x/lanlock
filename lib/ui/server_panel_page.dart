@@ -44,6 +44,17 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
   }
 
   Future<void> _setPassword() async {
+    if (_hasPw) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Changing master password is not supported yet to avoid data loss.',
+          ),
+        ),
+      );
+      return;
+    }
+
     final pw = _setPwController.text;
     if (pw.trim().length < 6) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -77,7 +88,7 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
     if (on) {
       if (!_hasPw) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Set a server password first')),
+          const SnackBar(content: Text('Set a master password first')),
         );
         return;
       }
@@ -139,8 +150,8 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
                   children: [
                     Text(
                       _status.isRunning
-                          ? 'Web access is protected by the same server password.'
-                          : 'Set a password, then switch ON.',
+                          ? 'Web access is protected by the same master password.'
+                          : 'Set a master password, then switch ON.',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.white70),
                     ),
                     if (url != null) ...[
@@ -174,13 +185,13 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
               ),
               const SizedBox(height: 14),
               _GlassCard(
-                title: 'Server password',
+                title: 'Master password',
                 subtitle: 'Required for web login',
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Password is stored securely (PBKDF2 hash).',
+                      'This password is used for app encryption and web login.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.white60),
                     ),
                     const SizedBox(height: 12),
@@ -189,7 +200,7 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
                       obscureText: true,
                       style: const TextStyle(color: Colors.white),
                       decoration: InputDecoration(
-                        hintText: _hasPw ? 'Set new password' : 'Set server password',
+                        hintText: _hasPw ? 'Set new master password' : 'Set master password',
                         hintStyle: const TextStyle(color: Colors.white54),
                         filled: true,
                         fillColor: Colors.white.withOpacity(0.06),
@@ -203,13 +214,13 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: _busy ? null : _setPassword,
+                        onPressed: _busy || _hasPw ? null : _setPassword,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.deepPurpleAccent.withOpacity(0.95),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
-                        child: Text(_hasPw ? 'Update Password' : 'Set Password'),
+                        child: Text(_hasPw ? 'Master Password Is Set' : 'Set Master Password'),
                       ),
                     ),
                   ],

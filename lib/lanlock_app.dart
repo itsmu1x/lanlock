@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'ui/profiles_page.dart';
+import 'ui/master_lock_page.dart';
 
 class LanlockApp extends StatelessWidget {
   const LanlockApp({super.key});
@@ -19,7 +19,7 @@ class LanlockApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFF070A12),
         canvasColor: const Color(0xFF070A12),
       ),
-      home: const ProfilesPage(),
+      home: const MasterLockPage(),
     );
   }
 }

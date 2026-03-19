@@ -215,10 +215,79 @@ const String lanlockWebIndexHtmlV2 = r'''<!doctype html>
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    .profile-sub{
+      margin-top: 4px;
+      font-size: 11px;
+      color: #a1a1aa;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
     .profile-id{
       margin-top: 6px;
       font-size: 11px;
       color: #a1a1aa;
+    }
+    .folder-head{
+      margin: 8px 0 0;
+    }
+    .folder-toggle{
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      border: 1px solid var(--border);
+      background: #15161a;
+      border-radius: 10px;
+      padding: 10px 11px;
+      cursor: pointer;
+      color: #d4d4d8;
+      transition: border-color .12s ease, background .12s ease;
+    }
+    .folder-toggle:hover{
+      border-color: #3a3d47;
+      background: #171920;
+    }
+    .folder-left{
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 3px;
+    }
+    .folder-name{
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .35px;
+      text-transform: uppercase;
+      color: #a1a1aa;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .folder-count{
+      font-size: 11px;
+      color: #71717a;
+    }
+    .folder-chevron{
+      flex: 0 0 auto;
+      color: #a1a1aa;
+      font-size: 11px;
+      transition: transform .18s ease;
+    }
+    .folder-toggle[aria-expanded="true"] .folder-chevron{
+      transform: rotate(90deg);
+    }
+    .folder-items{
+      display: grid;
+      gap: 8px;
+      margin: 8px 0 4px;
+      padding-left: 10px;
+      border-left: 1px dashed #2d3038;
+    }
+    .folder-items.is-collapsed{
+      display: none;
     }
 
     .section{
@@ -507,6 +576,20 @@ const String lanlockWebIndexHtmlV2 = r'''<!doctype html>
     let profiles = [];
     let selected = null;
     let metaLoadToken = 0;
+    const collapsedFolders = new Map();
+
+    function pathParts(name){
+      const raw = (name || '').trim();
+      if (!raw) return {folder:'General', leaf:'Unnamed', sub:null};
+      const parts = raw.split('/').map(s => s.trim()).filter(Boolean);
+      if (parts.length === 0) return {folder:'General', leaf:'Unnamed', sub:null};
+      if (parts.length === 1) return {folder:'General', leaf:parts[0], sub:null};
+      return {
+        folder: parts[0],
+        leaf: parts[parts.length - 1],
+        sub: parts.slice(0, parts.length - 1).join('/'),
+      };
+    }
 
     function renderProfiles(){
       const plist = $('plist');
@@ -516,15 +599,63 @@ const String lanlockWebIndexHtmlV2 = r'''<!doctype html>
         plist.innerHTML = '<span class="muted">No profiles found.</span>';
         return;
       }
+      const grouped = {};
       profiles.forEach((p) => {
-        const div = document.createElement('div');
-        div.className = 'profile' + (selected && selected.id === p.id ? ' active' : '');
-        div.innerHTML = `
-          <div class="profile-name" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</div>
-          <div class="profile-id">#${p.id}</div>
+        const info = pathParts(p.name);
+        if (!grouped[info.folder]) grouped[info.folder] = [];
+        grouped[info.folder].push({p, info});
+      });
+
+      Object.keys(grouped).sort((a,b)=>a.localeCompare(b)).forEach((folder) => {
+        const head = document.createElement('div');
+        head.className = 'folder-head';
+        const folderItems = grouped[folder]
+          .sort((a,b)=>a.p.name.localeCompare(b.p.name));
+
+        const hasSelected = folderItems.some(({p}) => selected && selected.id === p.id);
+        if (!collapsedFolders.has(folder)){
+          collapsedFolders.set(folder, true);
+        }
+        if (hasSelected){
+          collapsedFolders.set(folder, false);
+        }
+
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'folder-toggle';
+        toggle.setAttribute('aria-expanded', String(!collapsedFolders.get(folder)));
+        toggle.innerHTML = `
+          <div class="folder-left">
+            <div class="folder-name">${escapeHtml(folder)}</div>
+            <div class="folder-count">${folderItems.length} item${folderItems.length === 1 ? '' : 's'}</div>
+          </div>
+          <span class="folder-chevron">▶</span>
         `;
-        div.onclick = () => selectProfile(p);
-        plist.appendChild(div);
+        head.appendChild(toggle);
+        plist.appendChild(head);
+
+        const groupWrap = document.createElement('div');
+        groupWrap.className = 'folder-items' + (collapsedFolders.get(folder) ? ' is-collapsed' : '');
+        plist.appendChild(groupWrap);
+
+        toggle.onclick = () => {
+          const isCollapsed = collapsedFolders.get(folder);
+          collapsedFolders.set(folder, !isCollapsed);
+          groupWrap.classList.toggle('is-collapsed', !isCollapsed);
+          toggle.setAttribute('aria-expanded', String(isCollapsed));
+        };
+
+        folderItems.forEach(({p, info}) => {
+            const div = document.createElement('div');
+            div.className = 'profile' + (selected && selected.id === p.id ? ' active' : '');
+            div.innerHTML = `
+              <div class="profile-name" title="${escapeHtml(info.leaf)}">${escapeHtml(info.leaf)}</div>
+              ${info.sub ? `<div class="profile-sub" title="${escapeHtml(info.sub)}">${escapeHtml(info.sub)}</div>` : ''}
+              <div class="profile-id">#${p.id}</div>
+            `;
+            div.onclick = () => selectProfile(p);
+            groupWrap.appendChild(div);
+          });
       });
     }
 

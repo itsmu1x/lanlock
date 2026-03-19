@@ -4,10 +4,12 @@ class ProfileCard extends StatelessWidget {
   const ProfileCard({
     super.key,
     required this.name,
+    this.subtitle,
     required this.onTap,
   });
 
   final String name;
+  final String? subtitle;
   final VoidCallback onTap;
 
   @override
@@ -77,11 +79,28 @@ class ProfileCard extends StatelessWidget {
                       const SizedBox(height: 6),
                       ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 240),
-                        child: Text(
-                          name,
-                          style: titleStyle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name,
+                              style: titleStyle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (subtitle != null && subtitle!.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                subtitle!,
+                                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                      color: Colors.white60,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                     ],

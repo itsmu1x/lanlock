@@ -98,7 +98,7 @@ class _AddProfileDialogState extends State<AddProfileDialog> {
                     borderRadius: BorderRadius.circular(14),
                     borderSide: BorderSide(color: Colors.white.withOpacity(0.10)),
                   ),
-                  hintText: 'e.g. github.com',
+                  hintText: 'e.g. gmail/main or github/personal',
                   hintStyle: const TextStyle(color: Colors.white54),
                 ),
               ),

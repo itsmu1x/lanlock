@@ -51,6 +51,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
 
   @override
   Widget build(BuildContext context) {
+    final grouped = _groupProfiles(_profiles);
+
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -133,44 +135,54 @@ class _ProfilesPageState extends State<ProfilesPage> {
                     ? const Center(child: CircularProgressIndicator())
                     : RefreshIndicator(
                         onRefresh: () => _refresh(),
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final width = constraints.maxWidth;
-                            final crossAxisCount = width >= 780
-                                ? 4
-                                : width >= 520
-                                    ? 3
-                                    : width >= 360
-                                        ? 2
-                                        : 1;
-                            return GridView.builder(
-                              padding: const EdgeInsets.fromLTRB(18, 8, 18, 120),
-                              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: crossAxisCount,
-                                mainAxisSpacing: 12,
-                                crossAxisSpacing: 12,
-                                childAspectRatio: 1.62,
-                              ),
-                              itemCount: _profiles.length,
-                              itemBuilder: (context, index) {
-                                final p = _profiles[index];
-                                return ProfileCard(
-                                  name: p.name,
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => ProfileDetailPage(
-                                          profileId: p.id,
-                                          profileName: p.name,
-                                        ),
+                        child: ListView(
+                          padding: const EdgeInsets.fromLTRB(18, 8, 18, 120),
+                          children: [
+                            if (_profiles.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Text(
+                                  'Tip: Use profile names like "gmail/main" or "github/personal" to organize folders.',
+                                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                        color: Colors.white54,
                                       ),
-                                    );
-                                  },
+                                ),
+                              ),
+                            for (final entry in grouped.entries) ...[
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4, bottom: 10),
+                                child: Text(
+                                  entry.key,
+                                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                        color: Colors.white70,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 0.2,
+                                      ),
+                                ),
+                              ),
+                              ...entry.value.map((p) {
+                                final parsed = _splitProfilePath(p.name);
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: ProfileCard(
+                                    name: parsed.leaf,
+                                    subtitle: parsed.subPath,
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => ProfileDetailPage(
+                                            profileId: p.id,
+                                            profileName: p.name,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
                                 );
-                              },
-                            );
-                          },
+                              }),
+                            ],
+                          ],
                         ),
                       ),
               ),
@@ -195,6 +207,44 @@ class _ProfilesPageState extends State<ProfilesPage> {
       ),
     );
   }
+}
+
+Map<String, List<ProfileSummary>> _groupProfiles(List<ProfileSummary> profiles) {
+  final sorted = [...profiles];
+  sorted.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+  final grouped = <String, List<ProfileSummary>>{};
+  for (final p in sorted) {
+    final folder = _topFolder(p.name);
+    grouped.putIfAbsent(folder, () => <ProfileSummary>[]).add(p);
+  }
+  return grouped;
+}
+
+String _topFolder(String name) {
+  final normalized = name.trim();
+  final idx = normalized.indexOf('/');
+  if (idx <= 0) return 'General';
+  return normalized.substring(0, idx);
+}
+
+_PathInfo _splitProfilePath(String fullName) {
+  final normalized = fullName.trim();
+  if (normalized.isEmpty) return const _PathInfo(leaf: 'Unnamed', subPath: null);
+  final parts = normalized.split('/').where((p) => p.trim().isNotEmpty).toList();
+  if (parts.isEmpty) return const _PathInfo(leaf: 'Unnamed', subPath: null);
+  if (parts.length == 1) return _PathInfo(leaf: parts.first, subPath: null);
+  return _PathInfo(
+    leaf: parts.last,
+    subPath: parts.sublist(0, parts.length - 1).join('/'),
+  );
+}
+
+class _PathInfo {
+  const _PathInfo({required this.leaf, required this.subPath});
+
+  final String leaf;
+  final String? subPath;
 }
 
 class _SearchBar extends StatefulWidget {

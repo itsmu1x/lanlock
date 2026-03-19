@@ -1,6 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:local_auth/local_auth.dart';
 
 import '../lanlock_repository.dart';
 import '../lan_server/server.dart';
@@ -19,6 +23,7 @@ class ProfilesPage extends StatefulWidget {
 class _ProfilesPageState extends State<ProfilesPage> {
   final LanlockRepository _repo = LanlockRepository();
   final LanHttpServerController _serverController = LanHttpServerController();
+  final LocalAuthentication _localAuth = LocalAuthentication();
 
   List<ProfileSummary> _profiles = const [];
   String _query = '';
@@ -75,7 +80,8 @@ class _ProfilesPageState extends State<ProfilesPage> {
                         Expanded(
                           child: Text(
                             'Profiles',
-                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            style: Theme.of(context).textTheme.headlineSmall
+                                ?.copyWith(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w800,
                                   letterSpacing: 0.3,
@@ -88,11 +94,51 @@ class _ProfilesPageState extends State<ProfilesPage> {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => ServerPanelPage(controller: _serverController),
+                                builder: (_) => ServerPanelPage(
+                                  controller: _serverController,
+                                ),
                               ),
                             );
                           },
-                          icon: const Icon(Icons.wifi_tethering_rounded, color: Colors.white70),
+                          icon: const Icon(
+                            Icons.wifi_tethering_rounded,
+                            color: Colors.white70,
+                          ),
+                        ),
+                        PopupMenuButton<String>(
+                          tooltip: 'Backup',
+                          color: const Color(0xFF121828),
+                          onSelected: (value) async {
+                            final allowed = await _authenticateForBackup();
+                            if (!allowed) return;
+                            if (value == 'export') {
+                              await _openExportDialog();
+                              return;
+                            }
+                            if (value == 'import') {
+                              await _openImportDialog();
+                            }
+                          },
+                          itemBuilder: (context) => const [
+                            PopupMenuItem<String>(
+                              value: 'export',
+                              child: Text(
+                                'Export backup',
+                                style: TextStyle(color: Colors.white),
+                              ),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'import',
+                              child: Text(
+                                'Import backup',
+                                style: TextStyle(color: Colors.white),
+                              ),
+                            ),
+                          ],
+                          icon: const Icon(
+                            Icons.import_export_rounded,
+                            color: Colors.white70,
+                          ),
                         ),
                       ],
                     ),
@@ -101,17 +147,23 @@ class _ProfilesPageState extends State<ProfilesPage> {
                       initialQuery: _query,
                       onQueryChanged: (value) {
                         _debounce?.cancel();
-                        _debounce = Timer(const Duration(milliseconds: 250), () {
-                          _query = value;
-                          _refresh(query: value);
-                        });
+                        _debounce = Timer(
+                          const Duration(milliseconds: 250),
+                          () {
+                            _query = value;
+                            _refresh(query: value);
+                          },
+                        );
                       },
                     ),
                   ],
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 6,
+                ),
                 child: Row(
                   children: [
                     Expanded(
@@ -119,13 +171,17 @@ class _ProfilesPageState extends State<ProfilesPage> {
                         _query.trim().isEmpty
                             ? 'Tap a box to manage metadata + password'
                             : 'Results for "${_query.trim()}"',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Colors.white70,
-                            ),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(color: Colors.white70),
                       ),
                     ),
                     if (_isLoading)
-                      const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                      const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
                   ],
                 ),
               ),
@@ -139,23 +195,30 @@ class _ProfilesPageState extends State<ProfilesPage> {
                           padding: const EdgeInsets.fromLTRB(18, 8, 18, 120),
                           children: [
                             if (_profiles.isEmpty)
-                              _EmptyProfilesState(hasQuery: _query.trim().isNotEmpty)
+                              _EmptyProfilesState(
+                                hasQuery: _query.trim().isNotEmpty,
+                              )
                             else ...[
                               Padding(
                                 padding: const EdgeInsets.only(bottom: 12),
                                 child: Text(
                                   'Tip: Use profile names like "gmail/main" or "github/personal" to organize folders.',
-                                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                                        color: Colors.white54,
-                                      ),
+                                  style: Theme.of(context).textTheme.labelMedium
+                                      ?.copyWith(color: Colors.white54),
                                 ),
                               ),
                               for (final entry in grouped.entries) ...[
                                 Padding(
-                                  padding: const EdgeInsets.only(top: 4, bottom: 10),
+                                  padding: const EdgeInsets.only(
+                                    top: 4,
+                                    bottom: 10,
+                                  ),
                                   child: Text(
                                     entry.key,
-                                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleSmall
+                                        ?.copyWith(
                                           color: Colors.white70,
                                           fontWeight: FontWeight.w800,
                                           letterSpacing: 0.2,
@@ -209,6 +272,366 @@ class _ProfilesPageState extends State<ProfilesPage> {
         label: const Text('Add'),
       ),
     );
+  }
+
+  Future<bool> _authenticateForBackup() async {
+    try {
+      if (kIsWeb ||
+          (defaultTargetPlatform != TargetPlatform.android &&
+              defaultTargetPlatform != TargetPlatform.iOS)) {
+        if (!mounted) return false;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Biometric/PIN auth for backup is available on Android/iOS only.',
+            ),
+          ),
+        );
+        return false;
+      }
+
+      final isSupported = await _localAuth.isDeviceSupported();
+      if (!isSupported) {
+        if (!mounted) return false;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Device authentication is not available.'),
+          ),
+        );
+        return false;
+      }
+
+      final authenticated = await _localAuth.authenticate(
+        localizedReason: 'Authenticate to access backup export/import',
+        biometricOnly: false,
+      );
+
+      if (!authenticated && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Authentication canceled.')),
+        );
+      }
+      return authenticated;
+    } on MissingPluginException {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Auth plugin not ready. Run "flutter pub get" and fully restart the app.',
+          ),
+        ),
+      );
+      return false;
+    } on PlatformException catch (e) {
+      final msg = (e.message ?? e.code).toLowerCase();
+      if (msg.contains('unable to establish connection on channel')) {
+        if (!mounted) return false;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Auth channel unavailable. Please fully restart app after "flutter pub get".',
+            ),
+          ),
+        );
+        return false;
+      }
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Authentication failed: ${e.message ?? e.code}'),
+        ),
+      );
+      return false;
+    } catch (_) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Authentication failed.')));
+      return false;
+    }
+  }
+
+  Future<void> _openExportDialog() async {
+    try {
+      final payload = await _repo.exportBackupPayload();
+      final json = const JsonEncoder.withIndent('  ').convert(payload);
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => Theme(
+          data: Theme.of(ctx).copyWith(
+            colorScheme: Theme.of(ctx).colorScheme.copyWith(
+              brightness: Brightness.dark,
+              surface: const Color(0xFF0F1324),
+              onSurface: Colors.white,
+              onPrimary: Colors.white,
+              onSecondary: Colors.white,
+            ),
+            textTheme: Theme.of(ctx).textTheme.apply(
+              bodyColor: Colors.white,
+              displayColor: Colors.white,
+            ),
+            listTileTheme: const ListTileThemeData(
+              textColor: Colors.white,
+              iconColor: Colors.white70,
+            ),
+            inputDecorationTheme: InputDecorationTheme(
+              hintStyle: const TextStyle(color: Colors.white54),
+              filled: true,
+              fillColor: Colors.white.withOpacity(0.06),
+            ),
+            dialogTheme: const DialogThemeData(
+              titleTextStyle: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+              contentTextStyle: TextStyle(color: Colors.white70, fontSize: 14),
+            ),
+          ),
+          child: AlertDialog(
+            surfaceTintColor: Colors.transparent,
+            backgroundColor: const Color(0xFF0F1324),
+            title: const Text(
+              'Export Backup',
+              style: TextStyle(color: Colors.white),
+            ),
+            content: SizedBox(
+              width: MediaQuery.of(ctx).size.width > 700
+                  ? 620
+                  : MediaQuery.of(ctx).size.width * 0.88,
+              child: DefaultTextStyle.merge(
+                style: const TextStyle(color: Colors.white70),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Copy this JSON and store it in a safe place.',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      constraints: const BoxConstraints(maxHeight: 280),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.22),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.1),
+                        ),
+                      ),
+                      child: SingleChildScrollView(
+                        child: SelectableText(
+                          json,
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                            color: Colors.white70,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                style: TextButton.styleFrom(foregroundColor: Colors.white),
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: json));
+                  if (!ctx.mounted) return;
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    const SnackBar(content: Text('Backup JSON copied')),
+                  );
+                },
+                child: const Text('Copy JSON'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.deepPurpleAccent.withOpacity(0.92),
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Export failed: $e')));
+    }
+  }
+
+  Future<void> _openImportDialog() async {
+    final jsonController = TextEditingController();
+    var replaceExisting = false;
+
+    final action = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setStateDialog) => Theme(
+          data: Theme.of(ctx).copyWith(
+            colorScheme: Theme.of(ctx).colorScheme.copyWith(
+              brightness: Brightness.dark,
+              surface: const Color(0xFF0F1324),
+              onSurface: Colors.white,
+              onPrimary: Colors.white,
+              onSecondary: Colors.white,
+            ),
+            textTheme: Theme.of(ctx).textTheme.apply(
+              bodyColor: Colors.white,
+              displayColor: Colors.white,
+            ),
+            listTileTheme: const ListTileThemeData(
+              textColor: Colors.white,
+              iconColor: Colors.white70,
+            ),
+            inputDecorationTheme: InputDecorationTheme(
+              hintStyle: const TextStyle(color: Colors.white54),
+              filled: true,
+              fillColor: Colors.white.withOpacity(0.06),
+            ),
+            dialogTheme: const DialogThemeData(
+              titleTextStyle: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+              contentTextStyle: TextStyle(color: Colors.white70, fontSize: 14),
+            ),
+          ),
+          child: AlertDialog(
+            insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+            scrollable: true,
+            surfaceTintColor: Colors.transparent,
+            backgroundColor: const Color(0xFF0F1324),
+            title: const Text(
+              'Import Backup',
+              style: TextStyle(color: Colors.white),
+            ),
+            content: SizedBox(
+              width: MediaQuery.of(ctx).size.width > 700
+                  ? 620
+                  : MediaQuery.of(ctx).size.width * 0.88,
+              child: DefaultTextStyle.merge(
+                style: const TextStyle(color: Colors.white70),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Paste backup JSON here.',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: jsonController,
+                      minLines: 8,
+                      maxLines: 12,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: '{"format":"lanlock-backup-v1", ...}',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                            color: Colors.white.withOpacity(0.10),
+                          ),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                            color: Colors.white.withOpacity(0.10),
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                            color: Colors.deepPurpleAccent.withOpacity(0.85),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      activeColor: Colors.deepPurpleAccent,
+                      value: replaceExisting,
+                      onChanged: (v) => setStateDialog(() => replaceExisting = v),
+                      title: const Text(
+                        'Replace existing profiles with same name',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      subtitle: const Text(
+                        'Off = skip duplicates. On = update password/metadata.',
+                        style: TextStyle(color: Colors.white60),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                style: TextButton.styleFrom(foregroundColor: Colors.white),
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.deepPurpleAccent.withOpacity(0.92),
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Import'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (action != true) {
+      return;
+    }
+
+    try {
+      final raw = jsonController.text.trim();
+      if (raw.isEmpty) {
+        throw ArgumentError('Backup JSON is empty.');
+      }
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) {
+        throw ArgumentError('Backup JSON root must be an object.');
+      }
+      final stats = await _repo.importBackupPayload(
+        decoded,
+        replaceExisting: replaceExisting,
+      );
+      if (!mounted) return;
+      await _refresh();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Import done: ${stats['imported']} imported, ${stats['skipped']} skipped, ${stats['failed']} failed.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Import failed: $e')));
+    } finally {
+      // Intentionally not disposing here to avoid a race with dialog close
+      // animations where TextField may still read the controller briefly.
+    }
   }
 }
 
@@ -266,19 +689,19 @@ class _EmptyProfilesState extends StatelessWidget {
           Text(
             title,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.2,
-                ),
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.2,
+            ),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 8),
           Text(
             subtitle,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.white70,
-                  height: 1.35,
-                ),
+              color: Colors.white70,
+              height: 1.35,
+            ),
             textAlign: TextAlign.center,
           ),
           if (!hasQuery) ...[
@@ -286,9 +709,9 @@ class _EmptyProfilesState extends StatelessWidget {
             Text(
               'Tap the Add button to create one.',
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: Colors.white60,
-                    fontWeight: FontWeight.w600,
-                  ),
+                color: Colors.white60,
+                fontWeight: FontWeight.w600,
+              ),
               textAlign: TextAlign.center,
             ),
           ],
@@ -298,7 +721,9 @@ class _EmptyProfilesState extends StatelessWidget {
   }
 }
 
-Map<String, List<ProfileSummary>> _groupProfiles(List<ProfileSummary> profiles) {
+Map<String, List<ProfileSummary>> _groupProfiles(
+  List<ProfileSummary> profiles,
+) {
   final sorted = [...profiles];
   sorted.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
@@ -319,8 +744,12 @@ String _topFolder(String name) {
 
 _PathInfo _splitProfilePath(String fullName) {
   final normalized = fullName.trim();
-  if (normalized.isEmpty) return const _PathInfo(leaf: 'Unnamed', subPath: null);
-  final parts = normalized.split('/').where((p) => p.trim().isNotEmpty).toList();
+  if (normalized.isEmpty)
+    return const _PathInfo(leaf: 'Unnamed', subPath: null);
+  final parts = normalized
+      .split('/')
+      .where((p) => p.trim().isNotEmpty)
+      .toList();
   if (parts.isEmpty) return const _PathInfo(leaf: 'Unnamed', subPath: null);
   if (parts.length == 1) return _PathInfo(leaf: parts.first, subPath: null);
   return _PathInfo(
@@ -337,10 +766,7 @@ class _PathInfo {
 }
 
 class _SearchBar extends StatefulWidget {
-  const _SearchBar({
-    required this.initialQuery,
-    required this.onQueryChanged,
-  });
+  const _SearchBar({required this.initialQuery, required this.onQueryChanged});
 
   final String initialQuery;
   final ValueChanged<String> onQueryChanged;
@@ -396,11 +822,12 @@ class _SearchBarState extends State<_SearchBar> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide(color: Colors.deepPurpleAccent.withOpacity(0.9)),
+            borderSide: BorderSide(
+              color: Colors.deepPurpleAccent.withOpacity(0.9),
+            ),
           ),
         ),
       ),
     );
   }
 }
-

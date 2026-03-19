@@ -20,7 +20,8 @@ class MetaKeySummary {
 }
 
 class LanlockRepository {
-  LanlockRepository({LanlockCrypto? crypto}) : _crypto = crypto ?? LanlockCrypto();
+  LanlockRepository({LanlockCrypto? crypto})
+    : _crypto = crypto ?? LanlockCrypto();
 
   final LanlockCrypto _crypto;
 
@@ -81,7 +82,9 @@ CREATE TABLE meta_values(
 );
 ''');
 
-        await db.execute('CREATE INDEX idx_meta_keys_profile ON meta_keys(profile_id)');
+        await db.execute(
+          'CREATE INDEX idx_meta_keys_profile ON meta_keys(profile_id)',
+        );
       },
     );
   }
@@ -105,7 +108,9 @@ CREATE TABLE meta_values(
           );
 
     return rows
-        .map((r) => ProfileSummary(id: r['id'] as int, name: r['name'] as String))
+        .map(
+          (r) => ProfileSummary(id: r['id'] as int, name: r['name'] as String),
+        )
         .toList();
   }
 
@@ -133,46 +138,34 @@ CREATE TABLE meta_values(
       final now = DateTime.now().millisecondsSinceEpoch;
       final encryptedPassword = await _crypto.encryptString(password);
 
-      final profileId = await txn.insert(
-        'profiles',
-        {
-          'name': name.trim(),
-          'password_ciphertext': encryptedPassword.ciphertext,
-          'password_iv': encryptedPassword.iv,
-          'created_at': now,
-          'updated_at': now,
-        },
-        conflictAlgorithm: ConflictAlgorithm.fail,
-      );
+      final profileId = await txn.insert('profiles', {
+        'name': name.trim(),
+        'password_ciphertext': encryptedPassword.ciphertext,
+        'password_iv': encryptedPassword.iv,
+        'created_at': now,
+        'updated_at': now,
+      }, conflictAlgorithm: ConflictAlgorithm.fail);
 
       for (final entry in metadata.entries) {
         final keyName = entry.key.trim();
         if (keyName.isEmpty) continue;
 
         final metaNow = DateTime.now().millisecondsSinceEpoch;
-        final metaKeyId = await txn.insert(
-          'meta_keys',
-          {
-            'profile_id': profileId,
-            'key_name': keyName,
-            'created_at': metaNow,
-            'updated_at': metaNow,
-          },
-          conflictAlgorithm: ConflictAlgorithm.fail,
-        );
+        final metaKeyId = await txn.insert('meta_keys', {
+          'profile_id': profileId,
+          'key_name': keyName,
+          'created_at': metaNow,
+          'updated_at': metaNow,
+        }, conflictAlgorithm: ConflictAlgorithm.fail);
 
         final encryptedValue = await _crypto.encryptString(entry.value);
-        await txn.insert(
-          'meta_values',
-          {
-            'meta_key_id': metaKeyId,
-            'value_ciphertext': encryptedValue.ciphertext,
-            'value_iv': encryptedValue.iv,
-            'created_at': metaNow,
-            'updated_at': metaNow,
-          },
-          conflictAlgorithm: ConflictAlgorithm.fail,
-        );
+        await txn.insert('meta_values', {
+          'meta_key_id': metaKeyId,
+          'value_ciphertext': encryptedValue.ciphertext,
+          'value_iv': encryptedValue.iv,
+          'created_at': metaNow,
+          'updated_at': metaNow,
+        }, conflictAlgorithm: ConflictAlgorithm.fail);
       }
 
       return profileId;
@@ -190,7 +183,12 @@ CREATE TABLE meta_values(
     );
 
     return rows
-        .map((r) => MetaKeySummary(id: r['id'] as int, keyName: r['key_name'] as String))
+        .map(
+          (r) => MetaKeySummary(
+            id: r['id'] as int,
+            keyName: r['key_name'] as String,
+          ),
+        )
         .toList();
   }
 
@@ -271,16 +269,12 @@ CREATE TABLE meta_values(
     if (rows.isNotEmpty) return rows.first['id'] as int;
 
     final now = DateTime.now().millisecondsSinceEpoch;
-    return db.insert(
-      'meta_keys',
-      {
-        'profile_id': profileId,
-        'key_name': trimmed,
-        'created_at': now,
-        'updated_at': now,
-      },
-      conflictAlgorithm: ConflictAlgorithm.fail,
-    );
+    return db.insert('meta_keys', {
+      'profile_id': profileId,
+      'key_name': trimmed,
+      'created_at': now,
+      'updated_at': now,
+    }, conflictAlgorithm: ConflictAlgorithm.fail);
   }
 
   Future<void> upsertMetaKeyValue({
@@ -289,7 +283,10 @@ CREATE TABLE meta_values(
     required String value,
   }) async {
     final db = await database;
-    final metaKeyId = await getOrCreateMetaKeyId(profileId: profileId, keyName: keyName);
+    final metaKeyId = await getOrCreateMetaKeyId(
+      profileId: profileId,
+      keyName: keyName,
+    );
     final encryptedValue = await _crypto.encryptString(value);
     final now = DateTime.now().millisecondsSinceEpoch;
 
@@ -305,16 +302,13 @@ CREATE TABLE meta_values(
     );
 
     if (updated == 0) {
-      await db.insert(
-        'meta_values',
-        {
-          'meta_key_id': metaKeyId,
-          'value_ciphertext': encryptedValue.ciphertext,
-          'value_iv': encryptedValue.iv,
-          'created_at': now,
-          'updated_at': now,
-        },
-      );
+      await db.insert('meta_values', {
+        'meta_key_id': metaKeyId,
+        'value_ciphertext': encryptedValue.ciphertext,
+        'value_iv': encryptedValue.iv,
+        'created_at': now,
+        'updated_at': now,
+      });
     }
   }
 
@@ -330,10 +324,7 @@ CREATE TABLE meta_values(
 
     await db.update(
       'meta_keys',
-      {
-        'key_name': newKeyName.trim(),
-        'updated_at': now,
-      },
+      {'key_name': newKeyName.trim(), 'updated_at': now},
       where: 'id = ?',
       whereArgs: [metaKeyId],
     );
@@ -349,5 +340,139 @@ CREATE TABLE meta_values(
       whereArgs: [metaKeyId],
     );
   }
-}
 
+  Future<Map<String, dynamic>> exportBackupPayload() async {
+    final db = await database;
+    final profileRows = await db.query(
+      'profiles',
+      columns: const ['id', 'name'],
+      orderBy: 'name COLLATE NOCASE ASC',
+    );
+
+    final profiles = <Map<String, dynamic>>[];
+    for (final row in profileRows) {
+      final profileId = row['id'] as int;
+      final name = row['name'] as String;
+      final password = await decryptProfilePassword(profileId);
+
+      final metaRows = await db.rawQuery(
+        '''
+SELECT mk.id AS mk_id, mk.key_name AS key_name
+FROM meta_keys mk
+WHERE mk.profile_id = ?
+ORDER BY mk.key_name COLLATE NOCASE ASC
+''',
+        [profileId],
+      );
+
+      final metadata = <Map<String, String>>[];
+      for (final mk in metaRows) {
+        final metaKeyId = mk['mk_id'] as int;
+        final keyName = mk['key_name'] as String;
+        final value = await decryptMetaKeyValue(metaKeyId);
+        metadata.add({'key': keyName, 'value': value});
+      }
+
+      profiles.add({'name': name, 'password': password, 'metadata': metadata});
+    }
+
+    return {
+      'format': 'lanlock-backup-v1',
+      'createdAt': DateTime.now().toUtc().toIso8601String(),
+      'profiles': profiles,
+    };
+  }
+
+  Future<Map<String, int>> importBackupPayload(
+    Map<String, dynamic> payload, {
+    required bool replaceExisting,
+  }) async {
+    final profilesRaw = payload['profiles'];
+    if (profilesRaw is! List) {
+      throw ArgumentError('Invalid backup: "profiles" must be a list.');
+    }
+
+    var imported = 0;
+    var skipped = 0;
+    var failed = 0;
+
+    for (final item in profilesRaw) {
+      try {
+        if (item is! Map<String, dynamic>) {
+          failed++;
+          continue;
+        }
+        final name = (item['name'] as String? ?? '').trim();
+        final password = item['password'] as String? ?? '';
+        if (name.isEmpty || password.isEmpty) {
+          failed++;
+          continue;
+        }
+
+        final metadata = <String, String>{};
+        final metaRaw = item['metadata'];
+        if (metaRaw is List) {
+          for (final mk in metaRaw) {
+            if (mk is! Map<String, dynamic>) continue;
+            final key = (mk['key'] as String? ?? '').trim();
+            final value = mk['value'] as String? ?? '';
+            if (key.isEmpty) continue;
+            metadata[key] = value;
+          }
+        }
+
+        final existing = await _findProfileByName(name);
+        if (existing == null) {
+          await createProfile(
+            name: name,
+            password: password,
+            metadata: metadata,
+          );
+          imported++;
+          continue;
+        }
+
+        if (!replaceExisting) {
+          skipped++;
+          continue;
+        }
+
+        await updateProfilePassword(
+          profileId: existing.id,
+          newPassword: password,
+        );
+        for (final entry in metadata.entries) {
+          await upsertMetaKeyValue(
+            profileId: existing.id,
+            keyName: entry.key,
+            value: entry.value,
+          );
+        }
+        imported++;
+      } catch (_) {
+        failed++;
+      }
+    }
+
+    return {
+      'imported': imported,
+      'skipped': skipped,
+      'failed': failed,
+      'total': profilesRaw.length,
+    };
+  }
+
+  Future<ProfileSummary?> _findProfileByName(String name) async {
+    final db = await database;
+    final rows = await db.query(
+      'profiles',
+      columns: const ['id', 'name'],
+      where: 'name = ?',
+      whereArgs: [name.trim()],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    final r = rows.first;
+    return ProfileSummary(id: r['id'] as int, name: r['name'] as String);
+  }
+}

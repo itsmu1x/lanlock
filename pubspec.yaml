@@ -44,6 +44,7 @@ dependencies:
     crypto: any
     local_auth: any
     file_picker: any
+    open_file: any
 
 dev_dependencies:
     flutter_test:

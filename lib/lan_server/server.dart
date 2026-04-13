@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
@@ -8,6 +9,7 @@ import 'package:shelf_router/shelf_router.dart';
 
 import '../lanlock_repository.dart';
 import 'auth.dart';
+import 'share_store.dart';
 import 'web_ui_v2.dart';
 
 class LanServerStatus {
@@ -34,6 +36,7 @@ class LanHttpServerController {
   final LanlockRepository _repo;
   final ServerPasswordStore _passwordStore;
   final SessionManager _sessions = SessionManager();
+  final LanShareStore shareStore = LanShareStore();
 
   HttpServer? _server;
   String? _host;
@@ -116,7 +119,7 @@ class LanHttpServerController {
   static const Map<String, String> _corsHeaders = <String, String>{
     'access-control-allow-origin': '*',
     'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-    'access-control-allow-headers': 'content-type, authorization',
+    'access-control-allow-headers': 'content-type, authorization, x-filename, cookie',
     'cache-control': 'no-store',
   };
 
@@ -207,6 +210,74 @@ class LanHttpServerController {
       return _json({'value': value});
     });
 
+    // LAN share hub (text + files; same session auth).
+    r.get('/api/share/list', (Request req) {
+      if (!_isAuthed(req)) return Response(401);
+      return _json({
+        'items': [for (final i in shareStore.list()) i.toJsonSummary()],
+      });
+    });
+
+    r.post('/api/share/text', (Request req) async {
+      if (!_isAuthed(req)) return Response(401);
+      final body = await _readJson(req);
+      final text = (body['text'] ?? '').toString();
+      if (text.isEmpty) return _json({'error': 'empty'}, status: 400);
+      try {
+        final item = shareStore.addText(text);
+        return _json({'ok': true, 'id': item.id});
+      } catch (e) {
+        return _json({'error': e.toString()}, status: 400);
+      }
+    });
+
+    r.post('/api/share/file', (Request req) async {
+      if (!_isAuthed(req)) return Response(401);
+      final name = req.headers['x-filename'] ?? 'upload.bin';
+      final bytes = await _readRequestBytes(req);
+      if (bytes.isEmpty) return _json({'error': 'empty body'}, status: 400);
+      try {
+        final item = await shareStore.addFile(bytes, name);
+        return _json({'ok': true, 'id': item.id});
+      } catch (e) {
+        return _json({'error': e.toString()}, status: 400);
+      }
+    });
+
+    r.get('/api/share/item/<id>/text', (Request req, String id) {
+      if (!_isAuthed(req)) return Response(401);
+      final item = shareStore.get(id);
+      if (item == null || item.kind != ShareKind.text) {
+        return _json({'error': 'not found'}, status: 404);
+      }
+      return _json({'text': item.text ?? ''});
+    });
+
+    r.get('/api/share/item/<id>/file', (Request req, String id) async {
+      if (!_isAuthed(req)) return Response(401);
+      final item = shareStore.get(id);
+      if (item == null || item.kind != ShareKind.file || item.filePath == null) {
+        return Response.notFound('not found');
+      }
+      final f = File(item.filePath!);
+      if (!await f.exists()) return Response.notFound('missing file');
+      final bytes = await f.readAsBytes();
+      return Response.ok(
+        bytes,
+        headers: {
+          'content-type': 'application/octet-stream',
+          'content-disposition': 'attachment; filename="${item.label}"',
+          ..._corsHeaders,
+        },
+      );
+    });
+
+    r.delete('/api/share/item/<id>', (Request req, String id) {
+      if (!_isAuthed(req)) return Response(401);
+      final ok = shareStore.remove(id);
+      return _json({'ok': ok});
+    });
+
     return r;
   }
 
@@ -237,6 +308,14 @@ class LanHttpServerController {
         ..._corsHeaders,
       },
     );
+  }
+
+  static Future<Uint8List> _readRequestBytes(Request req) async {
+    final b = BytesBuilder(copy: false);
+    await for (final chunk in req.read()) {
+      b.add(chunk);
+    }
+    return b.takeBytes();
   }
 
   static Future<Map<String, dynamic>> _readJson(Request req) async {

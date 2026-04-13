@@ -482,6 +482,27 @@ const String lanlockWebIndexHtmlV2 = r'''<!doctype html>
         </div>
       </div>
     </div>
+
+    <div class="panel" style="margin-top:12px">
+      <div class="panel-head">
+        <h2>LAN Share</h2>
+        <button class="btn sm" type="button" id="btnShareRefresh">Refresh</button>
+      </div>
+      <div class="panel-body">
+        <p class="muted" style="margin:0 0 10px">Exchange text and files with the app and other browsers on your LAN (same login).</p>
+        <div class="row" style="margin-bottom:10px; width:100%">
+          <textarea class="input" id="shareText" placeholder="Type or paste text to share…" style="min-height:76px; width:100%; max-width:100%; resize:vertical"></textarea>
+        </div>
+        <div class="row" style="margin-bottom:12px">
+          <button class="btn primary" type="button" id="btnShareSend">Send text</button>
+          <label class="btn" style="cursor:pointer; margin:0">
+            Upload file
+            <input type="file" id="shareFile" style="display:none" />
+          </label>
+        </div>
+        <div id="shareList" class="profiles" style="max-height:300px"></div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -577,6 +598,78 @@ const String lanlockWebIndexHtmlV2 = r'''<!doctype html>
     let selected = null;
     let metaLoadToken = 0;
     const collapsedFolders = new Map();
+
+    function formatShareSize(b){
+      if (b < 1024) return b + ' B';
+      if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+      return (b/1048576).toFixed(1) + ' MB';
+    }
+
+    async function loadShareList(){
+      const el = $('shareList');
+      if (!el) return;
+      try{
+        const d = await api('/api/share/list');
+        const items = d.items || [];
+        if (!items.length){
+          el.innerHTML = '<span class="muted">No shared items yet.</span>';
+          return;
+        }
+        el.innerHTML = '';
+        items.forEach((it) => {
+          const row = document.createElement('div');
+          row.className = 'meta-row';
+          row.style.alignItems = 'flex-start';
+          const left = document.createElement('div');
+          left.className = 'meta-key';
+          left.style.maxWidth = '62%';
+          left.innerHTML = '<div style="font-weight:600">' + escapeHtml(it.kind === 'text' ? 'Text' : it.label) + '</div>' +
+            '<div style="font-size:11px;color:var(--muted);margin-top:4px">' + formatShareSize(it.sizeBytes) + '</div>';
+          const actions = document.createElement('div');
+          actions.className = 'meta-actions';
+          if (it.kind === 'text'){
+            const b1 = document.createElement('button');
+            b1.className = 'btn sm';
+            b1.textContent = 'View';
+            b1.onclick = async () => {
+              const t = await api('/api/share/item/' + encodeURIComponent(it.id) + '/text');
+              openModal('Text', '<pre>' + escapeHtml(t.text) + '</pre>', [
+                { text:'Copy', kind:'primary', onClick: async () => {
+                  const ok = await copyText(t.text);
+                  toast(ok ? 'Copied' : 'Copy blocked', ok);
+                  overlay.style.display = 'none';
+                }},
+                { text:'Close', onClick: () => overlay.style.display = 'none' }
+              ]);
+            };
+            actions.appendChild(b1);
+          } else {
+            const a = document.createElement('a');
+            a.className = 'btn sm';
+            a.href = '/api/share/item/' + encodeURIComponent(it.id) + '/file';
+            a.setAttribute('download', it.label || 'file');
+            a.textContent = 'Download';
+            actions.appendChild(a);
+          }
+          const bDel = document.createElement('button');
+          bDel.className = 'btn sm danger';
+          bDel.textContent = 'Remove';
+          bDel.onclick = async () => {
+            try{
+              await api('/api/share/item/' + encodeURIComponent(it.id), { method:'DELETE' });
+              toast('Removed');
+              await loadShareList();
+            }catch(err){ toast(String(err.message || err), false); }
+          };
+          actions.appendChild(bDel);
+          row.appendChild(left);
+          row.appendChild(actions);
+          el.appendChild(row);
+        });
+      }catch(_){
+        el.innerHTML = '<span class="muted">Could not load share list.</span>';
+      }
+    }
 
     function pathParts(name){
       const raw = (name || '').trim();
@@ -770,9 +863,50 @@ const String lanlockWebIndexHtmlV2 = r'''<!doctype html>
       } else {
         await selectProfile(selected);
       }
+      await loadShareList();
     }
 
     $('btnRefresh').onclick = async () => { await refreshProfiles(); };
+    $('btnShareRefresh').onclick = async () => { await loadShareList(); };
+
+    $('btnShareSend').onclick = async () => {
+      const t = ($('shareText').value || '').trim();
+      if (!t) return;
+      try{
+        await api('/api/share/text', { method:'POST', body: JSON.stringify({ text: t }) });
+        $('shareText').value = '';
+        toast('Sent');
+        await loadShareList();
+      }catch(e){ toast(String(e.message || e), false); }
+    };
+
+    $('shareFile').addEventListener('change', async (e) => {
+      const input = e.target;
+      const f = input.files && input.files[0];
+      input.value = '';
+      if (!f) return;
+      try{
+        const buf = await f.arrayBuffer();
+        const res = await fetch('/api/share/file', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'X-Filename': f.name
+          },
+          body: buf
+        });
+        const ct = res.headers.get('content-type') || '';
+        const data = ct.includes('application/json') ? await res.json().catch(()=>({})) : null;
+        if (res.status === 401) throw new Error('unauthorized');
+        if (!res.ok){
+          const msg = (data && data.error) ? data.error : 'upload failed';
+          throw new Error(msg);
+        }
+        toast('File uploaded');
+        await loadShareList();
+      }catch(err){ toast(String(err.message || err), false); }
+    });
     $('q').addEventListener('input', () => {
       clearTimeout(window.__qTimer);
       window.__qTimer = setTimeout(refreshProfiles, 250);

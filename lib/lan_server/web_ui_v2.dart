@@ -3,7 +3,7 @@ const String lanlockWebIndexHtmlV2 = r'''<!doctype html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Lanlock</title>
+  <title>LanLock v2</title>
   <style>
     :root{
       --bg: #09090b;
@@ -134,14 +134,15 @@ const String lanlockWebIndexHtmlV2 = r'''<!doctype html>
       }
     }
 
-    .layout{
+    .main-split{
       margin-top: 14px;
       display: grid;
       grid-template-columns: 1fr;
       gap: 12px;
+      align-items: start;
     }
-    @media (min-width: 1024px){
-      .layout{grid-template-columns: 360px minmax(0,1fr)}
+    @media (min-width: 900px){
+      .main-split{grid-template-columns: minmax(260px, 340px) minmax(0, 1fr)}
     }
 
     .panel{
@@ -178,10 +179,13 @@ const String lanlockWebIndexHtmlV2 = r'''<!doctype html>
     .profiles{
       display: flex;
       flex-direction: column;
-      gap: 8px;
-      max-height: calc(100vh - 220px);
+      gap: 6px;
+      max-height: min(52vh, 480px);
       overflow: auto;
       padding-right: 2px;
+    }
+    @media (min-width: 900px){
+      .profiles{max-height: 420px}
     }
     .profiles::-webkit-scrollbar{width:10px}
     .profiles::-webkit-scrollbar-thumb{
@@ -192,10 +196,14 @@ const String lanlockWebIndexHtmlV2 = r'''<!doctype html>
     }
 
     .profile{
+      width: 100%;
+      text-align: left;
+      font: inherit;
+      color: inherit;
       border: 1px solid var(--border);
       background: #15161a;
       border-radius: 10px;
-      padding: 10px 11px;
+      padding: 10px 12px;
       cursor: pointer;
       transition: border-color .12s ease, background .12s ease;
     }
@@ -207,6 +215,13 @@ const String lanlockWebIndexHtmlV2 = r'''<!doctype html>
       border-color: #4f46e5;
       background: #1b1d2c;
     }
+    .profile-row-inner{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-width: 0;
+    }
     .profile-name{
       font-size: 13px;
       font-weight: 600;
@@ -214,80 +229,30 @@ const String lanlockWebIndexHtmlV2 = r'''<!doctype html>
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-    }
-    .profile-sub{
-      margin-top: 4px;
-      font-size: 11px;
-      color: #a1a1aa;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .profile-id{
-      margin-top: 6px;
-      font-size: 11px;
-      color: #a1a1aa;
-    }
-    .folder-head{
-      margin: 8px 0 0;
-    }
-    .folder-toggle{
-      width: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      border: 1px solid var(--border);
-      background: #15161a;
-      border-radius: 10px;
-      padding: 10px 11px;
-      cursor: pointer;
-      color: #d4d4d8;
-      transition: border-color .12s ease, background .12s ease;
-    }
-    .folder-toggle:hover{
-      border-color: #3a3d47;
-      background: #171920;
-    }
-    .folder-left{
       min-width: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 3px;
     }
-    .folder-name{
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: .35px;
-      text-transform: uppercase;
-      color: #a1a1aa;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .folder-count{
-      font-size: 11px;
-      color: #71717a;
-    }
-    .folder-chevron{
+    .profile-chev{
       flex: 0 0 auto;
-      color: #a1a1aa;
+      color: #71717a;
+      font-size: 16px;
+      line-height: 1;
+    }
+
+    .spacer-head{
       font-size: 11px;
-      transition: transform .18s ease;
+      font-weight: 800;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: #c4b5fd;
+      padding: 12px 8px 8px;
+      margin: 2px 0 0;
+      border-bottom: 1px solid var(--border);
+      background: rgba(99,102,241,.06);
+      border-radius: 8px 8px 0 0;
     }
-    .folder-toggle[aria-expanded="true"] .folder-chevron{
-      transform: rotate(90deg);
-    }
-    .folder-items{
-      display: grid;
-      gap: 8px;
-      margin: 8px 0 4px;
-      padding-left: 10px;
-      border-left: 1px dashed #2d3038;
-    }
-    .folder-items.is-collapsed{
-      display: none;
+    .spacer-head:first-child{
+      margin-top: 0;
+      padding-top: 8px;
     }
 
     .section{
@@ -436,7 +401,7 @@ const String lanlockWebIndexHtmlV2 = r'''<!doctype html>
   <div class="login-wrap" id="login">
     <div class="panel">
       <div class="panel-head">
-        <h2>Lanlock Login</h2>
+        <h2>LanLock v2 · Login</h2>
       </div>
       <div class="panel-body">
         <p class="muted" style="margin:0 0 10px">Enter the server password configured in the app.</p>
@@ -451,20 +416,25 @@ const String lanlockWebIndexHtmlV2 = r'''<!doctype html>
   <div class="app" id="app" style="display:none">
     <div class="topbar">
       <div class="title">
-        <h1>Lanlock</h1>
-        <p>Read-only password profiles</p>
+        <h1>LanLock v2</h1>
+        <p>Read-only vault</p>
       </div>
       <div class="row controls">
-        <input class="input" id="q" placeholder="Search profiles..." style="width:240px; max-width:70vw" />
         <button class="btn" id="btnRefresh">Refresh</button>
         <button class="btn danger" id="btnLogout">Logout</button>
       </div>
     </div>
 
-    <div class="layout">
+    <div class="panel" style="margin-top:12px">
+      <div class="panel-body" style="padding:12px 14px">
+        <input class="input" id="q" placeholder="Search passwords…" style="width:100%; max-width:100%" />
+      </div>
+    </div>
+
+    <div class="main-split">
       <div class="panel">
         <div class="panel-head">
-          <h2>Profiles</h2>
+          <h2>Passwords</h2>
           <span class="muted" id="profilesCount">0</span>
         </div>
         <div class="panel-body">
@@ -478,7 +448,7 @@ const String lanlockWebIndexHtmlV2 = r'''<!doctype html>
           <span class="muted" id="detailSub"></span>
         </div>
         <div class="panel-body" id="detail">
-          <span class="muted">Select a profile from the list.</span>
+          <span class="muted">Select an entry to view password and metadata.</span>
         </div>
       </div>
     </div>
@@ -595,9 +565,10 @@ const String lanlockWebIndexHtmlV2 = r'''<!doctype html>
     }
 
     let profiles = [];
+    let layoutMode = false;
+    let layoutRows = [];
     let selected = null;
     let metaLoadToken = 0;
-    const collapsedFolders = new Map();
 
     function formatShareSize(b){
       if (b < 1024) return b + ' B';
@@ -671,97 +642,69 @@ const String lanlockWebIndexHtmlV2 = r'''<!doctype html>
       }
     }
 
-    function pathParts(name){
-      const raw = (name || '').trim();
-      if (!raw) return {folder:'General', leaf:'Unnamed', sub:null};
-      const parts = raw.split('/').map(s => s.trim()).filter(Boolean);
-      if (parts.length === 0) return {folder:'General', leaf:'Unnamed', sub:null};
-      if (parts.length === 1) return {folder:'General', leaf:parts[0], sub:null};
-      return {
-        folder: parts[0],
-        leaf: parts[parts.length - 1],
-        sub: parts.slice(0, parts.length - 1).join('/'),
-      };
-    }
-
     function renderProfiles(){
       const plist = $('plist');
       plist.innerHTML = '';
-      $('profilesCount').textContent = String(profiles.length);
-      if (!profiles.length){
-        plist.innerHTML = '<span class="muted">No profiles found.</span>';
+      if (layoutMode){
+        let n = 0;
+        if (!layoutRows.length){
+          plist.innerHTML = '<span class="muted">No passwords yet.</span>';
+          $('profilesCount').textContent = '0';
+          return;
+        }
+        layoutRows.forEach((r) => {
+          if (r.kind === 'spacer'){
+            const div = document.createElement('div');
+            div.className = 'spacer-head';
+            div.textContent = (r.title && r.title.trim()) ? r.title : 'Section';
+            plist.appendChild(div);
+            return;
+          }
+          n++;
+          const p = { id: r.id, name: r.name };
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'profile' + (selected && selected.id === p.id ? ' active' : '');
+          btn.innerHTML = `
+            <div class="profile-row-inner">
+              <div class="profile-name" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</div>
+              <span class="profile-chev">›</span>
+            </div>`;
+          btn.onclick = () => selectProfile(p);
+          plist.appendChild(btn);
+        });
+        $('profilesCount').textContent = String(n);
         return;
       }
-      const grouped = {};
+      $('profilesCount').textContent = String(profiles.length);
+      if (!profiles.length){
+        plist.innerHTML = '<span class="muted">No passwords match.</span>';
+        return;
+      }
       profiles.forEach((p) => {
-        const info = pathParts(p.name);
-        if (!grouped[info.folder]) grouped[info.folder] = [];
-        grouped[info.folder].push({p, info});
-      });
-
-      Object.keys(grouped).sort((a,b)=>a.localeCompare(b)).forEach((folder) => {
-        const head = document.createElement('div');
-        head.className = 'folder-head';
-        const folderItems = grouped[folder]
-          .sort((a,b)=>a.p.name.localeCompare(b.p.name));
-
-        const hasSelected = folderItems.some(({p}) => selected && selected.id === p.id);
-        if (!collapsedFolders.has(folder)){
-          collapsedFolders.set(folder, true);
-        }
-        if (hasSelected){
-          collapsedFolders.set(folder, false);
-        }
-
-        const toggle = document.createElement('button');
-        toggle.type = 'button';
-        toggle.className = 'folder-toggle';
-        toggle.setAttribute('aria-expanded', String(!collapsedFolders.get(folder)));
-        toggle.innerHTML = `
-          <div class="folder-left">
-            <div class="folder-name">${escapeHtml(folder)}</div>
-            <div class="folder-count">${folderItems.length} item${folderItems.length === 1 ? '' : 's'}</div>
-          </div>
-          <span class="folder-chevron">▶</span>
-        `;
-        head.appendChild(toggle);
-        plist.appendChild(head);
-
-        const groupWrap = document.createElement('div');
-        groupWrap.className = 'folder-items' + (collapsedFolders.get(folder) ? ' is-collapsed' : '');
-        plist.appendChild(groupWrap);
-
-        toggle.onclick = () => {
-          const isCollapsed = collapsedFolders.get(folder);
-          collapsedFolders.set(folder, !isCollapsed);
-          groupWrap.classList.toggle('is-collapsed', !isCollapsed);
-          toggle.setAttribute('aria-expanded', String(isCollapsed));
-        };
-
-        folderItems.forEach(({p, info}) => {
-            const div = document.createElement('div');
-            div.className = 'profile' + (selected && selected.id === p.id ? ' active' : '');
-            div.innerHTML = `
-              <div class="profile-name" title="${escapeHtml(info.leaf)}">${escapeHtml(info.leaf)}</div>
-              ${info.sub ? `<div class="profile-sub" title="${escapeHtml(info.sub)}">${escapeHtml(info.sub)}</div>` : ''}
-              <div class="profile-id">#${p.id}</div>
-            `;
-            div.onclick = () => selectProfile(p);
-            groupWrap.appendChild(div);
-          });
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'profile' + (selected && selected.id === p.id ? ' active' : '');
+        btn.innerHTML = `
+          <div class="profile-row-inner">
+            <div class="profile-name" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</div>
+            <span class="profile-chev">›</span>
+          </div>`;
+        btn.onclick = () => selectProfile(p);
+        plist.appendChild(btn);
       });
     }
 
     function renderDetail(){
       if (!selected){
-        $('detail').innerHTML = '<span class="muted">Select a profile from the list.</span>';
+        $('detail').innerHTML = '<span class="muted">Select an entry to view password and metadata.</span>';
         $('detailTitle').textContent = 'Details';
         $('detailSub').textContent = '';
         return;
       }
 
       $('detailTitle').textContent = selected.name;
-      $('detailSub').textContent = 'ID ' + selected.id;
+      $('detailSub').textContent = '#' + selected.id;
       $('detail').innerHTML = `
         <div class="section">
           <h3>Password</h3>
@@ -852,7 +795,12 @@ const String lanlockWebIndexHtmlV2 = r'''<!doctype html>
     async function refreshProfiles(){
       const q = $('q').value.trim();
       const d = await api('/api/profiles' + (q ? ('?q=' + encodeURIComponent(q)) : ''));
+      layoutMode = !!d.layout;
+      layoutRows = d.layout || [];
       profiles = d.profiles || [];
+      if (layoutMode){
+        profiles = layoutRows.filter((r) => r.kind === 'profile').map((r) => ({ id: r.id, name: r.name }));
+      }
       if (selected && !profiles.find((x) => x.id === selected.id)) selected = null;
 
       renderProfiles();
@@ -942,4 +890,3 @@ const String lanlockWebIndexHtmlV2 = r'''<!doctype html>
   </script>
 </body>
 </html>''';
-

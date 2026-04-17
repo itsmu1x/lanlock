@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../lanlock_repository.dart';
 import '../../password_generator.dart';
+import '../lanlock_toast.dart';
 
 class AddProfileDialog extends StatefulWidget {
   const AddProfileDialog({super.key, required this.repo});
@@ -28,7 +29,7 @@ class _AddProfileDialogState extends State<AddProfileDialog> {
 
   String _generatedPassword = '';
 
-  final List<_MetaRowDraft> _metaRows = [_MetaRowDraft()];
+  final List<_MetaRowDraft> _metaRows = [];
 
   @override
   void initState() {
@@ -57,54 +58,115 @@ class _AddProfileDialogState extends State<AddProfileDialog> {
     );
   }
 
-  String get _activePassword => _useGeneratedPassword ? _generatedPassword : _customPasswordController.text;
+  String get _activePassword =>
+      _useGeneratedPassword ? _generatedPassword : _customPasswordController.text;
 
   Future<void> _copyPassword() async {
     final pw = _activePassword;
     if (pw.isEmpty) return;
     await Clipboard.setData(ClipboardData(text: pw));
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Password copied')),
-      );
+      showLanlockToast(context, 'Password copied', kind: LanlockToastKind.success);
     }
+  }
+
+  TextStyle _sectionTitle(BuildContext context) {
+    return Theme.of(context).textTheme.titleSmall!.copyWith(
+          color: Colors.white,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.2,
+        );
+  }
+
+  TextStyle _hint(BuildContext context) {
+    return Theme.of(context).textTheme.bodySmall!.copyWith(
+          color: Colors.white54,
+          height: 1.35,
+        );
+  }
+
+  InputDecoration _fieldDecoration({String? label, String? hint}) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      labelStyle: const TextStyle(color: Colors.white60),
+      hintStyle: const TextStyle(color: Colors.white38),
+      filled: true,
+      fillColor: Colors.white.withOpacity(0.06),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: Colors.white.withOpacity(0.10)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: Colors.deepPurpleAccent.withOpacity(0.85)),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final displayedPassword = _showPassword ? _activePassword : '*' * _activePassword.length;
+    final displayedPassword =
+        _showPassword ? _activePassword : '*' * _activePassword.length;
+    final maxH = MediaQuery.sizeOf(context).height * 0.82;
 
     return AlertDialog(
       backgroundColor: const Color(0xFF0F1324),
-      title: const Text('Add Password Profile'),
-      content: SizedBox(
-        width: 600,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 22),
+      titlePadding: const EdgeInsets.fromLTRB(20, 18, 16, 6),
+      contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+      actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
+      title: Row(
+        children: [
+          Icon(
+            Icons.add_moderator_rounded,
+            color: Colors.deepPurpleAccent.withOpacity(0.95),
+            size: 26,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'New password',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+          ),
+        ],
+      ),
+      content: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: 440, maxHeight: maxH),
         child: SingleChildScrollView(
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              Text('Label', style: _sectionTitle(context)),
+              const SizedBox(height: 4),
               Text(
-                'Profile name:',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.white70),
+                'This is what you see in the grid (e.g. site or account name).',
+                style: _hint(context),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               TextField(
                 controller: _nameController,
+                textInputAction: TextInputAction.next,
                 style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: Colors.white.withOpacity(0.06),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: Colors.white.withOpacity(0.10)),
-                  ),
-                  hintText: 'e.g. gmail/main or github/personal',
-                  hintStyle: const TextStyle(color: Colors.white54),
+                decoration: _fieldDecoration(
+                  label: 'Name',
+                  hint: 'Gmail, Work Wi-Fi…',
                 ),
               ),
-
+              const SizedBox(height: 20),
+              Divider(height: 1, color: Colors.white.withOpacity(0.08)),
               const SizedBox(height: 16),
-
+              Text('Secret', style: _sectionTitle(context)),
+              const SizedBox(height: 4),
+              Text(
+                'Generate a strong password or type your own.',
+                style: _hint(context),
+              ),
+              const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
@@ -163,22 +225,14 @@ class _AddProfileDialogState extends State<AddProfileDialog> {
                   ),
                 ],
               ),
-
               const SizedBox(height: 14),
-
-              Text(
-                'Password:',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.white70),
-              ),
-              const SizedBox(height: 10),
-
               if (_useGeneratedPassword) ...[
                 Wrap(
                   spacing: 10,
                   runSpacing: 10,
                   children: [
                     _TogChip(
-                      label: 'Alphabets',
+                      label: 'A–Z / a–z',
                       selected: _useAlphabets,
                       onTap: () {
                         setState(() {
@@ -188,7 +242,7 @@ class _AddProfileDialogState extends State<AddProfileDialog> {
                       },
                     ),
                     _TogChip(
-                      label: 'Numerics',
+                      label: '0–9',
                       selected: _useNumerics,
                       onTap: () {
                         setState(() {
@@ -198,7 +252,7 @@ class _AddProfileDialogState extends State<AddProfileDialog> {
                       },
                     ),
                     _TogChip(
-                      label: 'Special',
+                      label: 'Symbols',
                       selected: _useSpecial,
                       onTap: () {
                         setState(() {
@@ -209,9 +263,7 @@ class _AddProfileDialogState extends State<AddProfileDialog> {
                     ),
                   ],
                 ),
-
-                const SizedBox(height: 16),
-
+                const SizedBox(height: 14),
                 Row(
                   children: [
                     Expanded(
@@ -235,22 +287,23 @@ class _AddProfileDialogState extends State<AddProfileDialog> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 8),
                     SizedBox(
-                      width: 64,
+                      width: 44,
                       child: Text(
                         '$_length',
                         textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.white),
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
                       ),
                     ),
                   ],
                 ),
-
                 const SizedBox(height: 10),
-
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.06),
                     border: Border.all(color: Colors.white.withOpacity(0.10)),
@@ -261,37 +314,38 @@ class _AddProfileDialogState extends State<AddProfileDialog> {
                       Expanded(
                         child: SelectableText(
                           displayedPassword,
-                          style: const TextStyle(color: Colors.white, fontSize: 14),
+                          style: const TextStyle(color: Colors.white, fontSize: 13),
                         ),
                       ),
                       IconButton(
                         tooltip: _showPassword ? 'Hide' : 'Show',
                         onPressed: () => setState(() => _showPassword = !_showPassword),
                         icon: Icon(
-                          _showPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                          _showPassword
+                              ? Icons.visibility_off_rounded
+                              : Icons.visibility_rounded,
                         ),
                         color: Colors.white70,
+                        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                        padding: EdgeInsets.zero,
                       ),
                       IconButton(
                         tooltip: 'Copy',
                         onPressed: _copyPassword,
-                        icon: const Icon(Icons.copy_rounded),
+                        icon: const Icon(Icons.copy_rounded, size: 20),
                         color: Colors.white70,
+                        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                        padding: EdgeInsets.zero,
                       ),
                     ],
                   ),
                 ),
-
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        _regeneratePassword();
-                      });
-                    },
-                    icon: const Icon(Icons.refresh_rounded, color: Colors.white70),
+                    onPressed: () => setState(_regeneratePassword),
+                    icon: const Icon(Icons.refresh_rounded, color: Colors.white70, size: 18),
                     label: const Text('Regenerate', style: TextStyle(color: Colors.white70)),
                   ),
                 ),
@@ -300,24 +354,22 @@ class _AddProfileDialogState extends State<AddProfileDialog> {
                   controller: _customPasswordController,
                   obscureText: !_showPassword,
                   style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    hintText: 'Enter password',
-                    hintStyle: const TextStyle(color: Colors.white54),
-                    filled: true,
-                    fillColor: Colors.white.withOpacity(0.06),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: Colors.white.withOpacity(0.10)),
-                    ),
+                  onChanged: (_) => setState(() {}),
+                  decoration: _fieldDecoration(
+                    hint: 'Type or paste your password',
+                  ).copyWith(
                     suffixIcon: IconButton(
                       onPressed: () => setState(() => _showPassword = !_showPassword),
-                      icon: Icon(_showPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded),
+                      icon: Icon(
+                        _showPassword
+                            ? Icons.visibility_off_rounded
+                            : Icons.visibility_rounded,
+                      ),
                       color: Colors.white70,
                     ),
                   ),
                 ),
-
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Align(
                   alignment: Alignment.centerRight,
                   child: IconButton(
@@ -327,46 +379,72 @@ class _AddProfileDialogState extends State<AddProfileDialog> {
                   ),
                 ),
               ],
-
-              const SizedBox(height: 18),
-
-              Row(
-                children: [
-                  const Text(
-                    'Metadata keys:',
-                    style: TextStyle(color: Colors.white70),
+              const SizedBox(height: 8),
+              Divider(height: 1, color: Colors.white.withOpacity(0.08)),
+              const SizedBox(height: 4),
+              Theme(
+                data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                child: ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  childrenPadding: const EdgeInsets.only(bottom: 6),
+                  initiallyExpanded: false,
+                  iconColor: Colors.white60,
+                  collapsedIconColor: Colors.white54,
+                  title: Text(
+                    'Optional fields',
+                    style: _sectionTitle(context).copyWith(fontSize: 15),
                   ),
-                  const Spacer(),
-                  TextButton.icon(
-                    onPressed: () => setState(() => _metaRows.add(_MetaRowDraft())),
-                    icon: const Icon(Icons.add_rounded, color: Colors.white70),
-                    label: const Text('Add', style: TextStyle(color: Colors.white70)),
+                  subtitle: Text(
+                    'Extra notes: email, username, URL…',
+                    style: _hint(context),
                   ),
-                ],
-              ),
-
-              const SizedBox(height: 10),
-
-              ListView.builder(
-                itemCount: _metaRows.length,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemBuilder: (context, idx) {
-                  final row = _metaRows[idx];
-                  return _MetaRowEditor(
-                    index: idx,
-                    canRemove: _metaRows.length > 1,
-                    onRemove: () {
-                      setState(() {
-                        if (_metaRows.length <= 1) return;
-                        row.dispose();
-                        _metaRows.removeAt(idx);
-                      });
-                    },
-                    keyController: row.keyController,
-                    valueController: row.valueController,
-                  );
-                },
+                  children: [
+                    if (_metaRows.isEmpty)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: () => setState(() => _metaRows.add(_MetaRowDraft())),
+                          icon: Icon(
+                            Icons.add_circle_outline_rounded,
+                            color: Colors.deepPurpleAccent.withOpacity(0.95),
+                            size: 20,
+                          ),
+                          label: const Text(
+                            'Add optional field',
+                            style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      )
+                    else
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (var idx = 0; idx < _metaRows.length; idx++)
+                            _MetaRowEditor(
+                              index: idx,
+                              canRemove: true,
+                              onRemove: () {
+                                setState(() {
+                                  final row = _metaRows[idx];
+                                  row.dispose();
+                                  _metaRows.removeAt(idx);
+                                });
+                              },
+                              keyController: _metaRows[idx].keyController,
+                              valueController: _metaRows[idx].valueController,
+                            ),
+                          TextButton.icon(
+                            onPressed: () => setState(() => _metaRows.add(_MetaRowDraft())),
+                            icon: const Icon(Icons.add_rounded, color: Colors.white54, size: 20),
+                            label: const Text(
+                              'Add another field',
+                              style: TextStyle(color: Colors.white54, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -377,14 +455,12 @@ class _AddProfileDialogState extends State<AddProfileDialog> {
           onPressed: () => Navigator.pop(context, false),
           child: const Text('Cancel'),
         ),
-        ElevatedButton(
+        FilledButton(
           onPressed: () async {
             final profileName = _nameController.text.trim();
             if (profileName.isEmpty) {
               if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Profile name is required')),
-                );
+                showLanlockToast(context, 'Add a label first.', kind: LanlockToastKind.error);
               }
               return;
             }
@@ -392,8 +468,10 @@ class _AddProfileDialogState extends State<AddProfileDialog> {
             final password = _activePassword;
             if (password.isEmpty) {
               if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Password is required')),
+                showLanlockToast(
+                  context,
+                  'Password cannot be empty.',
+                  kind: LanlockToastKind.error,
                 );
               }
               return;
@@ -415,17 +493,16 @@ class _AddProfileDialogState extends State<AddProfileDialog> {
               if (context.mounted) Navigator.pop(context, true);
             } catch (e) {
               if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Failed to add profile: $e')),
-                );
+                showLanlockToast(context, 'Could not create: $e', kind: LanlockToastKind.error);
               }
             }
           },
-          style: ElevatedButton.styleFrom(
+          style: FilledButton.styleFrom(
             backgroundColor: Colors.deepPurpleAccent.withOpacity(0.95),
             foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           ),
-          child: const Text('Add'),
+          child: const Text('Create'),
         ),
       ],
     );
@@ -453,7 +530,11 @@ class _TogChip extends StatelessWidget {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(999),
           color: selected ? Colors.deepPurpleAccent.withOpacity(0.20) : Colors.white.withOpacity(0.06),
-          border: Border.all(color: selected ? Colors.deepPurpleAccent.withOpacity(0.95) : Colors.white.withOpacity(0.12)),
+          border: Border.all(
+            color: selected
+                ? Colors.deepPurpleAccent.withOpacity(0.95)
+                : Colors.white.withOpacity(0.12),
+          ),
         ),
         child: Text(
           label,
@@ -496,7 +577,12 @@ class _MetaRowEditor extends StatelessWidget {
   final TextEditingController keyController;
   final TextEditingController valueController;
 
-  InputDecoration _decoration(BuildContext context, {required String label, required String hint, required IconData icon}) {
+  InputDecoration _decoration(
+    BuildContext context, {
+    required String label,
+    required String hint,
+    required IconData icon,
+  }) {
     return InputDecoration(
       labelText: label,
       hintText: hint,
@@ -504,7 +590,7 @@ class _MetaRowEditor extends StatelessWidget {
       hintStyle: const TextStyle(color: Colors.white38),
       prefixIcon: Icon(icon, color: Colors.white54, size: 18),
       isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       filled: true,
       fillColor: Colors.white.withOpacity(0.06),
       border: OutlineInputBorder(
@@ -521,103 +607,60 @@ class _MetaRowEditor extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.white.withOpacity(0.10)),
       ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final isWide = constraints.maxWidth >= 420;
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Row(
-                children: [
-                  Text(
-                    'Metadata ${index + 1}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.white60,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.2,
-                        ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    tooltip: canRemove ? 'Remove' : 'At least one required',
-                    onPressed: canRemove ? onRemove : null,
-                    icon: const Icon(Icons.close_rounded, color: Colors.white70),
-                  ),
-                ],
+              Text(
+                'Field ${index + 1}',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: Colors.white54,
+                      fontWeight: FontWeight.w700,
+                    ),
               ),
-              const SizedBox(height: 10),
-              if (isWide)
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: TextField(
-                        controller: keyController,
-                        style: const TextStyle(color: Colors.white),
-                        decoration: _decoration(
-                          context,
-                          label: 'Key',
-                          hint: 'e.g. email',
-                          icon: Icons.label_rounded,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      flex: 3,
-                      child: TextField(
-                        controller: valueController,
-                        style: const TextStyle(color: Colors.white),
-                        maxLines: 2,
-                        decoration: _decoration(
-                          context,
-                          label: 'Value',
-                          hint: 'e.g. me@example.com',
-                          icon: Icons.text_fields_rounded,
-                        ),
-                      ),
-                    ),
-                  ],
-                )
-              else
-                Column(
-                  children: [
-                    TextField(
-                      controller: keyController,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: _decoration(
-                        context,
-                        label: 'Key',
-                        hint: 'e.g. email',
-                        icon: Icons.label_rounded,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: valueController,
-                      style: const TextStyle(color: Colors.white),
-                      maxLines: 2,
-                      decoration: _decoration(
-                        context,
-                        label: 'Value',
-                        hint: 'e.g. me@example.com',
-                        icon: Icons.text_fields_rounded,
-                      ),
-                    ),
-                  ],
-                ),
+              const Spacer(),
+              IconButton(
+                tooltip: 'Remove field',
+                onPressed: canRemove ? onRemove : null,
+                icon: const Icon(Icons.close_rounded, color: Colors.white54, size: 20),
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                padding: EdgeInsets.zero,
+              ),
             ],
-          );
-        },
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: keyController,
+            style: const TextStyle(color: Colors.white),
+            decoration: _decoration(
+              context,
+              label: 'Key',
+              hint: 'e.g. email',
+              icon: Icons.label_rounded,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: valueController,
+            style: const TextStyle(color: Colors.white),
+            maxLines: 2,
+            decoration: _decoration(
+              context,
+              label: 'Value',
+              hint: 'e.g. me@example.com',
+              icon: Icons.text_fields_rounded,
+            ),
+          ),
+        ],
       ),
     );
   }
 }
-

@@ -12,6 +12,19 @@ import 'auth.dart';
 import 'share_store.dart';
 import 'web_ui_v2.dart';
 
+/// TCP port for the on-device HTTP server (web UI + API).
+///
+/// From another machine on the same LAN, you can spot it with nmap, for example:
+///   nmap -sV -p 8080 PHONE_LAN_IP
+///   nmap --script http-server-header,http-title -p 8080 PHONE_LAN_IP
+///
+/// The HTTP `Server:` header is set to [_lanHttpServerBanner] so `-sV` / `http-server-header`
+/// often show the product name as **LanLock**.
+const int kLanHttpPort = 8080;
+
+/// Value of the HTTP `Server` response header (for nmap / client identification).
+const String _lanHttpServerBanner = 'LanLock/2.0.0';
+
 class LanServerStatus {
   const LanServerStatus({
     required this.isRunning,
@@ -30,8 +43,8 @@ class LanHttpServerController {
   LanHttpServerController({
     LanlockRepository? repo,
     ServerPasswordStore? passwordStore,
-  })  : _repo = repo ?? LanlockRepository(),
-        _passwordStore = passwordStore ?? const ServerPasswordStore();
+  }) : _repo = repo ?? LanlockRepository(),
+       _passwordStore = passwordStore ?? const ServerPasswordStore();
 
   final LanlockRepository _repo;
   final ServerPasswordStore _passwordStore;
@@ -47,21 +60,21 @@ class LanHttpServerController {
   Stream<LanServerStatus> get statusStream => _statusStream.stream;
 
   LanServerStatus get status => LanServerStatus(
-        isRunning: _server != null,
-        host: _host,
-        port: _port,
-        url: (_host != null && _port != null) ? 'http://$_host:$_port' : null,
-      );
+    isRunning: _server != null,
+    host: _host,
+    port: _port,
+    url: (_host != null && _port != null) ? 'http://$_host:$_port' : null,
+  );
 
   Future<bool> hasServerPassword() => _passwordStore.hasPassword();
 
-  Future<void> setServerPassword(String password) => _passwordStore.setPassword(password);
+  Future<void> setServerPassword(String password) =>
+      _passwordStore.setPassword(password);
 
-  Future<bool> verifyServerPassword(String password) => _passwordStore.verifyPassword(password);
+  Future<bool> verifyServerPassword(String password) =>
+      _passwordStore.verifyPassword(password);
 
-  Future<LanServerStatus> start({
-    int port = 8080,
-  }) async {
+  Future<LanServerStatus> start({int port = kLanHttpPort}) async {
     if (_server != null) return status;
 
     final hasPw = await _passwordStore.hasPassword();
@@ -72,6 +85,7 @@ class LanHttpServerController {
     final handler = Pipeline()
         .addMiddleware(logRequests())
         .addMiddleware(_cors())
+        .addMiddleware(_serverIdentification())
         .addHandler(_router().call);
 
     _server = await shelf_io.serve(
@@ -104,6 +118,18 @@ class LanHttpServerController {
     if (!_statusStream.isClosed) _statusStream.add(status);
   }
 
+  /// Sets [Server] on every response so scanners (e.g. nmap `-sV`) can label the service.
+  Middleware _serverIdentification() {
+    return (innerHandler) {
+      return (request) async {
+        final resp = await innerHandler(request);
+        final h = Map<String, String>.from(resp.headers);
+        h['Server'] = _lanHttpServerBanner;
+        return resp.change(headers: h);
+      };
+    };
+  }
+
   Middleware _cors() {
     return (innerHandler) {
       return (request) async {
@@ -119,7 +145,8 @@ class LanHttpServerController {
   static const Map<String, String> _corsHeaders = <String, String>{
     'access-control-allow-origin': '*',
     'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-    'access-control-allow-headers': 'content-type, authorization, x-filename, cookie',
+    'access-control-allow-headers':
+        'content-type, authorization, x-filename, cookie',
     'cache-control': 'no-store',
   };
 
@@ -130,10 +157,7 @@ class LanHttpServerController {
     r.get('/', (Request req) {
       return Response.ok(
         lanlockWebIndexHtmlV2,
-        headers: {
-          'content-type': 'text/html; charset=utf-8',
-          ..._corsHeaders,
-        },
+        headers: {'content-type': 'text/html; charset=utf-8', ..._corsHeaders},
       );
     });
 
@@ -157,7 +181,8 @@ class LanHttpServerController {
       return _json(
         {'ok': true},
         headers: {
-          'set-cookie': 'lanlock_session=$token; HttpOnly; SameSite=Strict; Path=/',
+          'set-cookie':
+              'lanlock_session=$token; HttpOnly; SameSite=Strict; Path=/',
         },
       );
     });
@@ -168,7 +193,8 @@ class LanHttpServerController {
       return _json(
         {'ok': true},
         headers: {
-          'set-cookie': 'lanlock_session=; Max-Age=0; HttpOnly; SameSite=Strict; Path=/',
+          'set-cookie':
+              'lanlock_session=; Max-Age=0; HttpOnly; SameSite=Strict; Path=/',
         },
       );
     });
@@ -177,10 +203,30 @@ class LanHttpServerController {
     r.get('/api/profiles', (Request req) async {
       if (!_isAuthed(req)) return Response(401);
       final q = req.url.queryParameters['q'] ?? '';
-      final profiles = await _repo.searchProfiles(q);
+      if (q.trim().isNotEmpty) {
+        final profiles = await _repo.searchProfiles(q);
+        return _json({
+          'profiles': [
+            for (final p in profiles) {'id': p.id, 'name': p.name},
+          ],
+        });
+      }
+      final layout = await _repo.loadHomeLayout();
       return _json({
-        'profiles': [
-          for (final p in profiles) {'id': p.id, 'name': p.name}
+        'layout': [
+          for (final row in layout)
+            if (row.kind == HomeItemKind.spacer)
+              {
+                'kind': 'spacer',
+                'spacerId': row.spacerId,
+                'title': row.spacerTitle ?? '',
+              }
+            else
+              {
+                'kind': 'profile',
+                'id': row.profileId,
+                'name': row.profileName ?? '',
+              },
         ],
       });
     });
@@ -198,7 +244,7 @@ class LanHttpServerController {
       final keys = await _repo.listMetaKeys(profileId);
       return _json({
         'keys': [
-          for (final k in keys) {'id': k.id, 'keyName': k.keyName}
+          for (final k in keys) {'id': k.id, 'keyName': k.keyName},
         ],
       });
     });
@@ -256,7 +302,9 @@ class LanHttpServerController {
     r.get('/api/share/item/<id>/file', (Request req, String id) async {
       if (!_isAuthed(req)) return Response(401);
       final item = shareStore.get(id);
-      if (item == null || item.kind != ShareKind.file || item.filePath == null) {
+      if (item == null ||
+          item.kind != ShareKind.file ||
+          item.filePath == null) {
         return Response.notFound('not found');
       }
       final f = File(item.filePath!);
@@ -298,7 +346,11 @@ class LanHttpServerController {
     return null;
   }
 
-  static Response _json(Object body, {int status = 200, Map<String, String>? headers}) {
+  static Response _json(
+    Object body, {
+    int status = 200,
+    Map<String, String>? headers,
+  }) {
     return Response(
       status,
       body: jsonEncode(body),
@@ -328,7 +380,10 @@ class LanHttpServerController {
 
   static Future<String?> _discoverLanIpv4() async {
     try {
-      final ifaces = await NetworkInterface.list(type: InternetAddressType.IPv4, includeLoopback: false);
+      final ifaces = await NetworkInterface.list(
+        type: InternetAddressType.IPv4,
+        includeLoopback: false,
+      );
       for (final iface in ifaces) {
         for (final addr in iface.addresses) {
           if (!addr.isLoopback && addr.type == InternetAddressType.IPv4) {
@@ -340,4 +395,3 @@ class LanHttpServerController {
     return null;
   }
 }
-

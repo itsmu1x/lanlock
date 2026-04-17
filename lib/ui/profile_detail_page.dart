@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../lanlock_repository.dart';
+import 'lanlock_toast.dart';
 import 'dialogs/edit_meta_key_dialog.dart';
 import 'dialogs/edit_password_dialog.dart';
 import 'widgets/meta_key_row.dart';
@@ -23,12 +24,15 @@ class ProfileDetailPage extends StatefulWidget {
 class _ProfileDetailPageState extends State<ProfileDetailPage> {
   final LanlockRepository _repo = LanlockRepository();
 
+  late String _profileTitle;
+
   List<MetaKeySummary> _metaKeys = const [];
   bool _isLoadingMetaKeys = false;
 
   @override
   void initState() {
     super.initState();
+    _profileTitle = widget.profileName;
     _loadMetaKeys();
   }
 
@@ -45,9 +49,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
   Future<void> _copyText(String text) async {
     await Clipboard.setData(ClipboardData(text: text));
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Copied')),
-      );
+      showLanlockToast(context, 'Copied', kind: LanlockToastKind.success);
     }
   }
 
@@ -98,9 +100,26 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
       ),
     );
     if (updated == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Password updated')),
-      );
+      showLanlockToast(context, 'Password updated', kind: LanlockToastKind.success);
+    }
+  }
+
+  Future<void> _renameProfile() async {
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (_) => _RenameProfileDialog(initialName: _profileTitle),
+    );
+    if (newName == null || !mounted) return;
+    final trimmed = newName.trim();
+    if (trimmed == _profileTitle) return;
+    try {
+      await _repo.updateProfileName(profileId: widget.profileId, newName: trimmed);
+      if (!mounted) return;
+      setState(() => _profileTitle = trimmed);
+      showLanlockToast(context, 'Renamed', kind: LanlockToastKind.success);
+    } catch (e) {
+      if (!mounted) return;
+      showLanlockToast(context, 'Rename failed: $e', kind: LanlockToastKind.error);
     }
   }
 
@@ -112,6 +131,44 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
   Future<void> _copyMetaKey(MetaKeySummary metaKey) async {
     final value = await _repo.decryptMetaKeyValue(metaKey.id);
     await _copyText(value);
+  }
+
+  Future<void> _deleteMetaKey(MetaKeySummary metaKey) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF0F1324),
+        title: const Text(
+          'Delete field?',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          'Remove "${metaKey.keyName}" from this entry? This cannot be undone.',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    try {
+      await _repo.deleteMetaKey(metaKey.id);
+      if (!mounted) return;
+      await _loadMetaKeys();
+      showLanlockToast(context, 'Metadata removed', kind: LanlockToastKind.success);
+    } catch (e) {
+      if (!mounted) return;
+      showLanlockToast(context, 'Delete failed: $e', kind: LanlockToastKind.error);
+    }
   }
 
   Future<void> _editMetaKey(MetaKeySummary metaKey) async {
@@ -129,9 +186,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
     );
     if (updated == true && mounted) {
       await _loadMetaKeys();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Metadata updated')),
-      );
+      showLanlockToast(context, 'Metadata updated', kind: LanlockToastKind.success);
     }
   }
 
@@ -161,7 +216,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
           style: TextStyle(color: Colors.white),
         ),
         content: Text(
-          'This removes "${widget.profileName}" and all its metadata. This cannot be undone.',
+          'This removes "$_profileTitle" and all its metadata. This cannot be undone.',
           style: const TextStyle(color: Colors.white70),
         ),
         actions: [
@@ -184,9 +239,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Delete failed: $e')),
-      );
+      showLanlockToast(context, 'Delete failed: $e', kind: LanlockToastKind.error);
     }
   }
 
@@ -208,7 +261,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                   ),
                   Expanded(
                     child: Text(
-                      widget.profileName,
+                      _profileTitle,
                       style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                             color: Colors.white,
                             fontWeight: FontWeight.w900,
@@ -217,6 +270,11 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                  ),
+                  IconButton(
+                    tooltip: 'Rename',
+                    icon: const Icon(Icons.edit_rounded, color: Colors.white70),
+                    onPressed: _renameProfile,
                   ),
                   IconButton(
                     tooltip: 'Delete profile',
@@ -315,6 +373,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                                 onEdit: () => _editMetaKey(metaKey),
                                 onView: () => _viewMetaKey(metaKey),
                                 onCopy: () => _copyMetaKey(metaKey),
+                                onDelete: () => _deleteMetaKey(metaKey),
                               ),
                           ],
                         ),
@@ -322,6 +381,84 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Owns [TextEditingController] so it is disposed after the route is torn down
+/// (avoids `_dependents.isEmpty` when disposing synchronously after [showDialog]).
+class _RenameProfileDialog extends StatefulWidget {
+  const _RenameProfileDialog({required this.initialName});
+
+  final String initialName;
+
+  @override
+  State<_RenameProfileDialog> createState() => _RenameProfileDialogState();
+}
+
+class _RenameProfileDialogState extends State<_RenameProfileDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialName);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: const Color(0xFF0F1324),
+      title: const Text('Rename', style: TextStyle(color: Colors.white)),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(
+          labelText: 'Name',
+          labelStyle: const TextStyle(color: Colors.white60),
+          hintText: 'Unique label for this password',
+          hintStyle: const TextStyle(color: Colors.white38),
+          filled: true,
+          fillColor: Colors.white.withOpacity(0.06),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: Colors.white.withOpacity(0.10)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: Colors.deepPurpleAccent.withOpacity(0.85)),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final t = _controller.text.trim();
+            if (t.isEmpty) {
+              showLanlockToast(
+                context,
+                'Name cannot be empty',
+                kind: LanlockToastKind.error,
+              );
+              return;
+            }
+            Navigator.pop(context, t);
+          },
+          style: FilledButton.styleFrom(backgroundColor: Colors.deepPurpleAccent),
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }

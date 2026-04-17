@@ -19,6 +19,27 @@ class MetaKeySummary {
   final String keyName;
 }
 
+enum HomeItemKind { spacer, profile }
+
+/// One row in the vault home screen (section header or password entry).
+class HomeLayoutRow {
+  const HomeLayoutRow({
+    required this.homeItemId,
+    required this.kind,
+    this.spacerId,
+    this.spacerTitle,
+    this.profileId,
+    this.profileName,
+  });
+
+  final int homeItemId;
+  final HomeItemKind kind;
+  final int? spacerId;
+  final String? spacerTitle;
+  final int? profileId;
+  final String? profileName;
+}
+
 class LanlockRepository {
   LanlockRepository({LanlockCrypto? crypto})
     : _crypto = crypto ?? LanlockCrypto();
@@ -42,7 +63,7 @@ class LanlockRepository {
 
     return openDatabase(
       fullPath,
-      version: 1,
+      version: 3,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
@@ -53,6 +74,7 @@ CREATE TABLE profiles(
   name TEXT NOT NULL UNIQUE,
   password_ciphertext BLOB NOT NULL,
   password_iv BLOB NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -85,8 +107,234 @@ CREATE TABLE meta_values(
         await db.execute(
           'CREATE INDEX idx_meta_keys_profile ON meta_keys(profile_id)',
         );
+
+        await db.execute('''
+CREATE TABLE spacers(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL DEFAULT ''
+);
+''');
+
+        await db.execute('''
+CREATE TABLE home_items(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sort_order INTEGER NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('spacer', 'profile')),
+  spacer_id INTEGER,
+  profile_id INTEGER,
+  FOREIGN KEY(spacer_id) REFERENCES spacers(id) ON DELETE CASCADE,
+  FOREIGN KEY(profile_id) REFERENCES profiles(id) ON DELETE CASCADE,
+  CHECK(
+    (kind = 'spacer' AND spacer_id IS NOT NULL AND profile_id IS NULL) OR
+    (kind = 'profile' AND profile_id IS NOT NULL AND spacer_id IS NULL)
+  )
+);
+''');
+
+        await db.execute(
+          'CREATE UNIQUE INDEX idx_home_items_profile ON home_items(profile_id) WHERE profile_id IS NOT NULL',
+        );
+        await db.execute(
+          'CREATE UNIQUE INDEX idx_home_items_spacer ON home_items(spacer_id) WHERE spacer_id IS NOT NULL',
+        );
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute(
+            'ALTER TABLE profiles ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0',
+          );
+          final rows = await db.query(
+            'profiles',
+            columns: const ['id'],
+            orderBy: 'name COLLATE NOCASE ASC',
+          );
+          final now = DateTime.now().millisecondsSinceEpoch;
+          var i = 0;
+          for (final r in rows) {
+            await db.update(
+              'profiles',
+              {'sort_order': i, 'updated_at': now},
+              where: 'id = ?',
+              whereArgs: [r['id']],
+            );
+            i++;
+          }
+        }
+        if (oldVersion < 3) {
+          await db.execute('''
+CREATE TABLE spacers(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL DEFAULT ''
+);
+''');
+          await db.execute('''
+CREATE TABLE home_items(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sort_order INTEGER NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('spacer', 'profile')),
+  spacer_id INTEGER,
+  profile_id INTEGER,
+  FOREIGN KEY(spacer_id) REFERENCES spacers(id) ON DELETE CASCADE,
+  FOREIGN KEY(profile_id) REFERENCES profiles(id) ON DELETE CASCADE,
+  CHECK(
+    (kind = 'spacer' AND spacer_id IS NOT NULL AND profile_id IS NULL) OR
+    (kind = 'profile' AND profile_id IS NOT NULL AND spacer_id IS NULL)
+  )
+);
+''');
+          await db.execute(
+            'CREATE UNIQUE INDEX idx_home_items_profile ON home_items(profile_id) WHERE profile_id IS NOT NULL',
+          );
+          await db.execute(
+            'CREATE UNIQUE INDEX idx_home_items_spacer ON home_items(spacer_id) WHERE spacer_id IS NOT NULL',
+          );
+          final rows = await db.query(
+            'profiles',
+            columns: const ['id'],
+            orderBy: 'sort_order ASC, name COLLATE NOCASE ASC',
+          );
+          var i = 0;
+          for (final r in rows) {
+            await db.insert('home_items', {
+              'sort_order': i,
+              'kind': 'profile',
+              'spacer_id': null,
+              'profile_id': r['id'],
+            });
+            i++;
+          }
+        }
       },
     );
+  }
+
+  Future<void> _ensureHomeLayoutCoversAllProfiles(Database db) async {
+    final profileRows = await db.query('profiles', columns: const ['id']);
+    if (profileRows.isEmpty) return;
+    final homeRows = await db.query(
+      'home_items',
+      columns: const ['profile_id'],
+      where: 'kind = ?',
+      whereArgs: const ['profile'],
+    );
+    final covered = <int>{
+      for (final r in homeRows)
+        if (r['profile_id'] != null) r['profile_id'] as int,
+    };
+    final missing = <int>[];
+    for (final r in profileRows) {
+      final id = r['id'] as int;
+      if (!covered.contains(id)) missing.add(id);
+    }
+    if (missing.isEmpty) return;
+
+    final maxRows = await db.rawQuery(
+      'SELECT COALESCE(MAX(sort_order), -1) AS m FROM home_items',
+    );
+    var o = (maxRows.first['m'] as int) + 1;
+    await db.transaction((txn) async {
+      for (final id in missing) {
+        await txn.insert('home_items', {
+          'sort_order': o,
+          'kind': 'profile',
+          'spacer_id': null,
+          'profile_id': id,
+        });
+        o++;
+      }
+    });
+  }
+
+  /// Ordered mix of spacers and profiles for the home screen and web UI.
+  Future<List<HomeLayoutRow>> loadHomeLayout() async {
+    final db = await database;
+    await _ensureHomeLayoutCoversAllProfiles(db);
+    final rows = await db.rawQuery('''
+SELECT
+  hi.id AS home_item_id,
+  hi.kind AS kind,
+  hi.spacer_id AS spacer_id,
+  hi.profile_id AS profile_id,
+  s.title AS spacer_title,
+  p.name AS profile_name
+FROM home_items hi
+LEFT JOIN spacers s ON s.id = hi.spacer_id
+LEFT JOIN profiles p ON p.id = hi.profile_id
+ORDER BY hi.sort_order ASC, hi.id ASC
+''');
+
+    return rows.map((r) {
+      final kindStr = r['kind'] as String;
+      final kind = kindStr == 'spacer'
+          ? HomeItemKind.spacer
+          : HomeItemKind.profile;
+      return HomeLayoutRow(
+        homeItemId: r['home_item_id'] as int,
+        kind: kind,
+        spacerId: r['spacer_id'] as int?,
+        spacerTitle: r['spacer_title'] as String?,
+        profileId: r['profile_id'] as int?,
+        profileName: r['profile_name'] as String?,
+      );
+    }).toList();
+  }
+
+  Future<void> reorderHomeLayout(List<int> homeItemIdsInOrder) async {
+    if (homeItemIdsInOrder.isEmpty) return;
+    final db = await database;
+    await db.transaction((txn) async {
+      for (var i = 0; i < homeItemIdsInOrder.length; i++) {
+        await txn.update(
+          'home_items',
+          {'sort_order': i},
+          where: 'id = ?',
+          whereArgs: [homeItemIdsInOrder[i]],
+        );
+      }
+    });
+  }
+
+  Future<int> createSpacer({required String title}) async {
+    final db = await database;
+    final trimmed = title.trim();
+    return db.transaction<int>((txn) async {
+      final spacerId = await txn.insert('spacers', {'title': trimmed});
+      final maxRows = await txn.rawQuery(
+        'SELECT COALESCE(MAX(sort_order), -1) AS m FROM home_items',
+      );
+      final nextOrder = (maxRows.first['m'] as int) + 1;
+      await txn.insert('home_items', {
+        'sort_order': nextOrder,
+        'kind': 'spacer',
+        'spacer_id': spacerId,
+        'profile_id': null,
+      });
+      return spacerId;
+    });
+  }
+
+  Future<void> updateSpacerTitle({
+    required int spacerId,
+    required String title,
+  }) async {
+    final db = await database;
+    final n = await db.update(
+      'spacers',
+      {'title': title.trim()},
+      where: 'id = ?',
+      whereArgs: [spacerId],
+    );
+    if (n == 0) throw StateError('Spacer not found');
+  }
+
+  Future<void> deleteSpacer(int spacerId) async {
+    final db = await database;
+    final n = await db.delete(
+      'spacers',
+      where: 'id = ?',
+      whereArgs: [spacerId],
+    );
+    if (n == 0) throw StateError('Spacer not found');
   }
 
   Future<List<ProfileSummary>> searchProfiles(String query) async {
@@ -97,14 +345,14 @@ CREATE TABLE meta_values(
         ? await db.query(
             'profiles',
             columns: const ['id', 'name'],
-            orderBy: 'name COLLATE NOCASE ASC',
+            orderBy: 'sort_order ASC, name COLLATE NOCASE ASC',
           )
         : await db.query(
             'profiles',
             columns: const ['id', 'name'],
             where: 'name LIKE ?',
             whereArgs: ['%$q%'],
-            orderBy: 'name COLLATE NOCASE ASC',
+            orderBy: 'sort_order ASC, name COLLATE NOCASE ASC',
           );
 
     return rows
@@ -149,13 +397,30 @@ CREATE TABLE meta_values(
       final now = DateTime.now().millisecondsSinceEpoch;
       final encryptedPassword = await _crypto.encryptString(password);
 
+      final maxRows = await txn.rawQuery(
+        'SELECT COALESCE(MAX(sort_order), -1) AS m FROM profiles',
+      );
+      final nextProfileOrder = (maxRows.first['m'] as int) + 1;
+
       final profileId = await txn.insert('profiles', {
         'name': name.trim(),
         'password_ciphertext': encryptedPassword.ciphertext,
         'password_iv': encryptedPassword.iv,
+        'sort_order': nextProfileOrder,
         'created_at': now,
         'updated_at': now,
       }, conflictAlgorithm: ConflictAlgorithm.fail);
+
+      final maxHome = await txn.rawQuery(
+        'SELECT COALESCE(MAX(sort_order), -1) AS m FROM home_items',
+      );
+      final nextHomeOrder = (maxHome.first['m'] as int) + 1;
+      await txn.insert('home_items', {
+        'sort_order': nextHomeOrder,
+        'kind': 'profile',
+        'spacer_id': null,
+        'profile_id': profileId,
+      });
 
       for (final entry in metadata.entries) {
         final keyName = entry.key.trim();
@@ -240,6 +505,34 @@ CREATE TABLE meta_values(
       where: 'id = ?',
       whereArgs: [profileId],
     );
+  }
+
+  /// Changes the display name (must stay unique across profiles).
+  Future<void> updateProfileName({
+    required int profileId,
+    required String newName,
+  }) async {
+    final db = await database;
+    final trimmed = newName.trim();
+    if (trimmed.isEmpty) throw ArgumentError('Name cannot be empty');
+
+    final self = await getProfile(profileId);
+    if (self == null) throw StateError('Profile not found');
+    if (self.name == trimmed) return;
+
+    final other = await _findProfileByName(trimmed);
+    if (other != null && other.id != profileId) {
+      throw StateError('Another entry already uses this name.');
+    }
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final n = await db.update(
+      'profiles',
+      {'name': trimmed, 'updated_at': now},
+      where: 'id = ?',
+      whereArgs: [profileId],
+    );
+    if (n == 0) throw StateError('Profile not found');
   }
 
   Future<String> decryptMetaKeyValue(int metaKeyId) async {
@@ -352,17 +645,31 @@ CREATE TABLE meta_values(
     );
   }
 
+  /// Removes a metadata key and its encrypted value (CASCADE on meta_values).
+  Future<void> deleteMetaKey(int metaKeyId) async {
+    final db = await database;
+    final n = await db.delete(
+      'meta_keys',
+      where: 'id = ?',
+      whereArgs: [metaKeyId],
+    );
+    if (n == 0) throw StateError('Metadata key not found');
+  }
+
   Future<Map<String, dynamic>> exportBackupPayload() async {
     final db = await database;
-    final profileRows = await db.query(
-      'profiles',
-      columns: const ['id', 'name'],
-      orderBy: 'name COLLATE NOCASE ASC',
-    );
+    await _ensureHomeLayoutCoversAllProfiles(db);
+    final orderedIds = await db.rawQuery('''
+SELECT hi.profile_id AS pid, p.name AS name
+FROM home_items hi
+JOIN profiles p ON p.id = hi.profile_id
+WHERE hi.kind = 'profile'
+ORDER BY hi.sort_order ASC, hi.id ASC
+''');
 
     final profiles = <Map<String, dynamic>>[];
-    for (final row in profileRows) {
-      final profileId = row['id'] as int;
+    for (final row in orderedIds) {
+      final profileId = row['pid'] as int;
       final name = row['name'] as String;
       final password = await decryptProfilePassword(profileId);
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../lanlock_repository.dart';
+import '../lanlock_toast.dart';
 
 class EditMetaKeyDialog extends StatefulWidget {
   const EditMetaKeyDialog({
@@ -103,8 +104,10 @@ class _EditMetaKeyDialogState extends State<EditMetaKeyDialog> {
             final newKeyName = _keyController.text.trim();
             if (newKeyName.isEmpty) {
               if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Meta key name cannot be empty')),
+                showLanlockToast(
+                  context,
+                  'Meta key name cannot be empty',
+                  kind: LanlockToastKind.error,
                 );
               }
               return;
@@ -128,9 +131,7 @@ class _EditMetaKeyDialogState extends State<EditMetaKeyDialog> {
               if (context.mounted) Navigator.pop(context, true);
             } catch (e) {
               if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Failed: $e')),
-                );
+                showLanlockToast(context, 'Failed: $e', kind: LanlockToastKind.error);
               }
             }
           },

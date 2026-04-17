@@ -7,10 +7,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:local_auth/local_auth.dart';
-
 import '../lanlock_repository.dart';
 import '../lan_server/server.dart';
 import 'dialogs/add_profile_dialog.dart';
+import 'lanlock_toast.dart';
 import 'profile_detail_page.dart';
 import 'server_panel_page.dart';
 import 'widgets/profile_card.dart';
@@ -27,12 +27,17 @@ class _ProfilesPageState extends State<ProfilesPage> {
   final LanHttpServerController _serverController = LanHttpServerController();
   final LocalAuthentication _localAuth = LocalAuthentication();
 
-  List<ProfileSummary> _profiles = const [];
+  List<HomeLayoutRow> _homeLayout = const [];
+  List<ProfileSummary> _searchHits = const [];
   String _query = '';
   bool _isLoading = false;
 
   Timer? _debounce;
-  final Set<String> _expandedFolders = <String>{};
+
+  bool get _searching => _query.trim().isNotEmpty;
+
+  int get _homeProfileCount =>
+      _homeLayout.where((r) => r.kind == HomeItemKind.profile).length;
 
   @override
   void initState() {
@@ -43,8 +48,14 @@ class _ProfilesPageState extends State<ProfilesPage> {
   Future<void> _refresh({String? query}) async {
     setState(() => _isLoading = true);
     try {
-      final list = await _repo.searchProfiles(query ?? _query);
-      if (mounted) setState(() => _profiles = list);
+      final q = (query ?? _query).trim();
+      if (q.isNotEmpty) {
+        final list = await _repo.searchProfiles(q);
+        if (mounted) setState(() => _searchHits = list);
+      } else {
+        final list = await _repo.loadHomeLayout();
+        if (mounted) setState(() => _homeLayout = list);
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -57,10 +68,252 @@ class _ProfilesPageState extends State<ProfilesPage> {
     super.dispose();
   }
 
+  Future<void> _onReorderHome(int oldIndex, int newIndex) async {
+    if (oldIndex < newIndex) newIndex -= 1;
+    if (oldIndex == newIndex) return;
+    final next = List<HomeLayoutRow>.from(_homeLayout);
+    final moved = next.removeAt(oldIndex);
+    next.insert(newIndex, moved);
+    setState(() => _homeLayout = next);
+    try {
+      await _repo.reorderHomeLayout(next.map((e) => e.homeItemId).toList());
+    } catch (_) {
+      if (mounted) {
+        await _refresh();
+        showLanlockToast(
+          context,
+          'Could not save new order.',
+          kind: LanlockToastKind.error,
+        );
+      }
+    }
+  }
+
+  Future<void> _promptAddSpacer() async {
+    final controller = TextEditingController(text: 'New section');
+    final title = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF0F1324),
+        title: const Text(
+          'New section',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            labelText: 'Section title',
+            labelStyle: const TextStyle(color: Colors.white70),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: Colors.white.withValues(alpha: 0.2),
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: Colors.deepPurpleAccent.withValues(alpha: 0.9),
+              ),
+            ),
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, null),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.deepPurpleAccent.withValues(alpha: 0.95),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    // Dispose after the dialog route is gone so the TextField is not still attached.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      controller.dispose();
+    });
+    if (!mounted || title == null || title.isEmpty) return;
+    try {
+      await _repo.createSpacer(title: title);
+      await _refresh();
+    } catch (e) {
+      if (mounted) {
+        showLanlockToast(
+          context,
+          'Could not add section: $e',
+          kind: LanlockToastKind.error,
+        );
+      }
+    }
+  }
+
+  Future<void> _editSpacer(HomeLayoutRow row) async {
+    final sid = row.spacerId;
+    if (sid == null) return;
+    final controller = TextEditingController(text: row.spacerTitle ?? '');
+    final title = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF0F1324),
+        title: const Text(
+          'Rename section',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            labelText: 'Title',
+            labelStyle: const TextStyle(color: Colors.white70),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: Colors.white.withValues(alpha: 0.2),
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: Colors.deepPurpleAccent.withValues(alpha: 0.9),
+              ),
+            ),
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, null),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.deepPurpleAccent.withValues(alpha: 0.95),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      controller.dispose();
+    });
+    if (!mounted || title == null || title.isEmpty) return;
+    try {
+      await _repo.updateSpacerTitle(spacerId: sid, title: title);
+      await _refresh();
+    } catch (e) {
+      if (mounted) {
+        showLanlockToast(
+          context,
+          'Could not rename: $e',
+          kind: LanlockToastKind.error,
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteSpacerConfirm(HomeLayoutRow row) async {
+    final sid = row.spacerId;
+    if (sid == null) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF0F1324),
+        title: const Text(
+          'Remove section?',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          'Only the section header is removed. Password entries stay in your vault '
+          'and keep their order.',
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.75),
+            height: 1.35,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.redAccent.withValues(alpha: 0.85),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await _repo.deleteSpacer(sid);
+      await _refresh();
+    } catch (e) {
+      if (mounted) {
+        showLanlockToast(
+          context,
+          'Could not remove section: $e',
+          kind: LanlockToastKind.error,
+        );
+      }
+    }
+  }
+
+  void _openProfileFromRow(HomeLayoutRow row) {
+    final id = row.profileId;
+    final name = row.profileName;
+    if (id == null || name == null) return;
+    _openProfile(ProfileSummary(id: id, name: name));
+  }
+
+  Future<void> _openProfile(ProfileSummary p) async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ProfileDetailPage(profileId: p.id, profileName: p.name),
+      ),
+    );
+    if (!mounted) return;
+    await _refresh();
+    if (!mounted) return;
+    if (result == true) {
+      showLanlockToast(
+        context,
+        'Profile deleted',
+        kind: LanlockToastKind.success,
+      );
+    }
+  }
+
+  /// Wider tiles = shorter rows (see [_gridChildAspect]); more columns on big screens.
+  int _crossAxisCount(double width) {
+    if (width >= 1000) return 5;
+    if (width >= 760) return 4;
+    if (width >= 480) return 3;
+    return 2;
+  }
+
+  static const double _gridChildAspect = 4.2;
+  static const double _gridMainGap = 4;
+  static const double _gridCrossGap = 4;
+
   @override
   Widget build(BuildContext context) {
-    final grouped = _groupProfiles(_profiles);
-
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -83,34 +336,34 @@ class _ProfilesPageState extends State<ProfilesPage> {
                         Expanded(
                           child: Row(
                             children: [
-                              Container(
-                                width: 32,
-                                height: 32,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(10),
-                                  color: Colors.white.withValues(alpha: 0.06),
-                                  border: Border.all(
-                                    color: Colors.white.withValues(alpha: 0.12),
-                                  ),
-                                ),
-                                padding: const EdgeInsets.all(4),
-                                child: Image.asset(
-                                  'lib/assets/lanlock_logo.png',
-                                ),
-                              ),
-                              const SizedBox(width: 10),
                               Text(
                                 'LanLock',
-                                style: Theme.of(context).textTheme.headlineSmall
+                                style: Theme.of(context).textTheme.titleMedium
                                     ?.copyWith(
-                                      color: Colors.white,
+                                      color: Colors.white.withValues(
+                                        alpha: 0.95,
+                                      ),
                                       fontWeight: FontWeight.w800,
-                                      letterSpacing: 0.3,
+                                      letterSpacing: 0.5,
                                     ),
                               ),
                             ],
                           ),
                         ),
+                        if (_isLoading &&
+                            (_searching
+                                ? _searchHits.isNotEmpty
+                                : _homeLayout.isNotEmpty))
+                          const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        if (_isLoading &&
+                            (_searching
+                                ? _searchHits.isNotEmpty
+                                : _homeLayout.isNotEmpty))
+                          const SizedBox(width: 8),
                         IconButton(
                           tooltip: 'LAN Server',
                           onPressed: () {
@@ -192,187 +445,262 @@ class _ProfilesPageState extends State<ProfilesPage> {
                   ],
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 18,
-                  vertical: 6,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        _query.trim().isEmpty
-                            ? 'Tap a box to manage metadata + password'
-                            : 'Results for "${_query.trim()}"',
-                        style: Theme.of(
-                          context,
-                        ).textTheme.bodySmall?.copyWith(color: Colors.white70),
-                      ),
-                    ),
-                    if (_isLoading)
-                      const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                  ],
-                ),
-              ),
               const SizedBox(height: 8),
               Expanded(
-                child: _isLoading
+                child:
+                    _isLoading &&
+                        (_searching ? _searchHits.isEmpty : _homeLayout.isEmpty)
                     ? const Center(child: CircularProgressIndicator())
-                    : RefreshIndicator(
-                        onRefresh: () => _refresh(),
-                        child: ListView(
-                          padding: const EdgeInsets.fromLTRB(18, 8, 18, 120),
-                          children: [
-                            if (_profiles.isEmpty)
-                              _EmptyProfilesState(
-                                hasQuery: _query.trim().isNotEmpty,
-                              )
-                            else ...[
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 12),
-                                child: Text(
-                                  'Tip: Use profile names like "gmail/main" or "github/personal" to organize folders.',
-                                  style: Theme.of(context).textTheme.labelMedium
-                                      ?.copyWith(color: Colors.white54),
+                    : LayoutBuilder(
+                        builder: (context, constraints) {
+                          final filtered = _searching;
+                          final cross = _crossAxisCount(constraints.maxWidth);
+                          if (filtered && _searchHits.isEmpty) {
+                            return RefreshIndicator(
+                              onRefresh: () => _refresh(),
+                              child: ListView(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                padding: const EdgeInsets.fromLTRB(
+                                  18,
+                                  8,
+                                  18,
+                                  120,
                                 ),
+                                children: [_EmptyProfilesState(hasQuery: true)],
                               ),
-                              for (final entry in grouped.entries) ...[
-                                Builder(
-                                  builder: (context) {
-                                    final isExpanded = _expandedFolders
-                                        .contains(entry.key);
-                                    final isCollapsed = !isExpanded;
-                                    return Padding(
-                                      padding: const EdgeInsets.only(
-                                        top: 4,
-                                        bottom: 10,
-                                      ),
-                                      child: Material(
-                                        color: Colors.transparent,
-                                        child: InkWell(
-                                          borderRadius: BorderRadius.circular(
-                                            12,
-                                          ),
-                                          onTap: () {
-                                            setState(() {
-                                              if (isExpanded) {
-                                                _expandedFolders.remove(
-                                                  entry.key,
-                                                );
-                                              } else {
-                                                _expandedFolders.add(entry.key);
-                                              }
-                                            });
-                                          },
-                                          child: Padding(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 2,
-                                              vertical: 6,
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                Expanded(
-                                                  child: Text(
-                                                    entry.key,
-                                                    style: Theme.of(context)
-                                                        .textTheme
-                                                        .titleSmall
-                                                        ?.copyWith(
-                                                          color: Colors.white70,
-                                                          fontWeight:
-                                                              FontWeight.w800,
-                                                          letterSpacing: 0.2,
-                                                        ),
-                                                  ),
-                                                ),
-                                                Text(
-                                                  '${entry.value.length}',
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .labelSmall
-                                                      ?.copyWith(
-                                                        color: Colors.white54,
-                                                        fontWeight:
-                                                            FontWeight.w700,
-                                                      ),
-                                                ),
-                                                const SizedBox(width: 8),
-                                                AnimatedRotation(
-                                                  turns: isCollapsed ? 0 : 0.25,
-                                                  duration: const Duration(
-                                                    milliseconds: 180,
-                                                  ),
-                                                  child: const Icon(
-                                                    Icons.chevron_right_rounded,
-                                                    color: Colors.white60,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                  },
+                            );
+                          }
+                          if (!filtered && _homeLayout.isEmpty) {
+                            return RefreshIndicator(
+                              onRefresh: () => _refresh(),
+                              child: ListView(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                padding: const EdgeInsets.fromLTRB(
+                                  18,
+                                  8,
+                                  18,
+                                  120,
                                 ),
-                                if (_expandedFolders.contains(entry.key))
-                                  ...entry.value.map((p) {
-                                    final parsed = _splitProfilePath(p.name);
-                                    return Padding(
-                                      padding: const EdgeInsets.only(
-                                        bottom: 10,
-                                      ),
-                                      child: ProfileCard(
-                                        name: parsed.leaf,
-                                        subtitle: parsed.subPath,
-                                        onTap: () async {
-                                          final removed = await Navigator.push<bool>(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (_) => ProfileDetailPage(
-                                                profileId: p.id,
-                                                profileName: p.name,
+                                children: [
+                                  _EmptyProfilesState(hasQuery: false),
+                                ],
+                              ),
+                            );
+                          }
+                          if (filtered) {
+                            return RefreshIndicator(
+                              onRefresh: () => _refresh(),
+                              child: GridView.builder(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                padding: const EdgeInsets.fromLTRB(
+                                  12,
+                                  2,
+                                  12,
+                                  120,
+                                ),
+                                gridDelegate:
+                                    SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: cross,
+                                      mainAxisSpacing: _gridMainGap,
+                                      crossAxisSpacing: _gridCrossGap,
+                                      childAspectRatio: _gridChildAspect,
+                                    ),
+                                itemCount: _searchHits.length,
+                                itemBuilder: (context, i) {
+                                  final p = _searchHits[i];
+                                  return ProfileCard(
+                                    key: ValueKey(p.id),
+                                    title: p.name,
+                                    dense: true,
+                                    showReorderHandle: false,
+                                    onTap: () => _openProfile(p),
+                                  );
+                                },
+                              ),
+                            );
+                          }
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Expanded(
+                                child: RefreshIndicator(
+                                  onRefresh: () => _refresh(),
+                                  child: ReorderableListView.builder(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      20,
+                                      2,
+                                      20,
+                                      8,
+                                    ),
+                                    physics:
+                                        const AlwaysScrollableScrollPhysics(),
+                                    buildDefaultDragHandles: false,
+                                    itemCount: _homeLayout.length,
+                                    onReorder: _onReorderHome,
+                                    itemBuilder: (context, index) {
+                                      final row = _homeLayout[index];
+                                      if (row.kind == HomeItemKind.spacer) {
+                                        return _SpacerRow(
+                                          key: ValueKey(
+                                            'home_${row.homeItemId}',
+                                          ),
+                                          reorderIndex: index,
+                                          title: row.spacerTitle ?? '',
+                                          onEdit: () => _editSpacer(row),
+                                          onDelete: () =>
+                                              _deleteSpacerConfirm(row),
+                                        );
+                                      }
+                                      return Row(
+                                        key: ValueKey('home_${row.homeItemId}'),
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.center,
+                                        children: [
+                                          ReorderableDragStartListener(
+                                            index: index,
+                                            child: Padding(
+                                              padding: const EdgeInsets.only(
+                                                right: 8,
+                                                bottom: 4,
+                                              ),
+                                              child: SizedBox(
+                                                width: 44,
+                                                height: 48,
+                                                child: Center(
+                                                  child: Icon(
+                                                    Icons
+                                                        .drag_indicator_rounded,
+                                                    size: 24,
+                                                    color: Colors.white
+                                                        .withValues(
+                                                          alpha: 0.38,
+                                                        ),
+                                                    semanticLabel:
+                                                        'Drag to reorder',
+                                                  ),
+                                                ),
                                               ),
                                             ),
-                                          );
-                                          if (removed == true && mounted) {
-                                            await _refresh();
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              const SnackBar(content: Text('Profile deleted')),
-                                            );
-                                          }
-                                        },
-                                      ),
-                                    );
-                                  }),
-                              ],
+                                          ),
+                                          Expanded(
+                                            child: Padding(
+                                              padding: const EdgeInsets.only(
+                                                bottom: 4,
+                                              ),
+                                              child: ProfileCard(
+                                                title: row.profileName ?? '',
+                                                dense: true,
+                                                showReorderHandle: false,
+                                                onTap: () =>
+                                                    _openProfileFromRow(row),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                              if (_homeProfileCount == 0 &&
+                                  _homeLayout.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    18,
+                                    0,
+                                    18,
+                                    100,
+                                  ),
+                                  child: Text(
+                                    'No password entries yet — tap Add to create one. '
+                                    'Sections are optional headers; drag items to organize.',
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: Colors.white54,
+                                          height: 1.35,
+                                        ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
                             ],
-                          ],
-                        ),
+                          );
+                        },
                       ),
               ),
             ],
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          final created = await showDialog<bool>(
-            context: context,
-            builder: (_) => AddProfileDialog(repo: _repo),
+      floatingActionButton: Builder(
+        builder: (fabContext) {
+          return FloatingActionButton(
+            tooltip: 'Add',
+            backgroundColor: Colors.deepPurpleAccent.withValues(alpha: 0.92),
+            foregroundColor: Colors.white,
+            child: const Icon(Icons.add_rounded),
+            onPressed: () async {
+              final button = fabContext.findRenderObject() as RenderBox?;
+              final overlayBox =
+                  Overlay.maybeOf(fabContext)?.context.findRenderObject()
+                      as RenderBox?;
+              if (button == null ||
+                  overlayBox == null ||
+                  !button.hasSize ||
+                  !overlayBox.hasSize) {
+                return;
+              }
+              final position = RelativeRect.fromRect(
+                Rect.fromPoints(
+                  button.localToGlobal(Offset.zero, ancestor: overlayBox),
+                  button.localToGlobal(
+                    button.size.bottomRight(Offset.zero),
+                    ancestor: overlayBox,
+                  ),
+                ),
+                Offset.zero & overlayBox.size,
+              );
+              final selected = await showMenu<String>(
+                context: fabContext,
+                position: position,
+                color: const Color(0xFF151828),
+                surfaceTintColor: Colors.transparent,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+                ),
+                elevation: 12,
+                items: const [
+                  PopupMenuItem<String>(
+                    value: 'password',
+                    child: _AddMenuRow(
+                      icon: Icons.vpn_key_rounded,
+                      label: 'Add password',
+                      iconColor: Color(0xFFD0BCFF),
+                    ),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'spacer',
+                    child: _AddMenuRow(
+                      icon: Icons.view_week_rounded,
+                      label: 'Add section',
+                      iconColor: Colors.white70,
+                    ),
+                  ),
+                ],
+              );
+              if (!mounted) return;
+              if (selected == 'password') {
+                final created = await showDialog<bool>(
+                  context: context,
+                  builder: (_) => AddProfileDialog(repo: _repo),
+                );
+                if (created == true) await _refresh();
+              } else if (selected == 'spacer') {
+                await _promptAddSpacer();
+              }
+            },
           );
-          if (created == true) {
-            await _refresh();
-          }
         },
-        backgroundColor: Colors.deepPurpleAccent.withOpacity(0.92),
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('Add'),
       ),
     );
   }
@@ -383,12 +711,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
           (defaultTargetPlatform != TargetPlatform.android &&
               defaultTargetPlatform != TargetPlatform.iOS)) {
         if (!mounted) return false;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Biometric/PIN auth for backup is available on Android/iOS only.',
-            ),
-          ),
+        showLanlockToast(
+          context,
+          'Biometric/PIN auth for backup is available on Android/iOS only.',
+          kind: LanlockToastKind.info,
         );
         return false;
       }
@@ -396,10 +722,10 @@ class _ProfilesPageState extends State<ProfilesPage> {
       final isSupported = await _localAuth.isDeviceSupported();
       if (!isSupported) {
         if (!mounted) return false;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Device authentication is not available.'),
-          ),
+        showLanlockToast(
+          context,
+          'Device authentication is not available.',
+          kind: LanlockToastKind.info,
         );
         return false;
       }
@@ -410,46 +736,46 @@ class _ProfilesPageState extends State<ProfilesPage> {
       );
 
       if (!authenticated && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Authentication canceled.')),
+        showLanlockToast(
+          context,
+          'Authentication canceled.',
+          kind: LanlockToastKind.info,
         );
       }
       return authenticated;
     } on MissingPluginException {
       if (!mounted) return false;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Auth plugin not ready. Run "flutter pub get" and fully restart the app.',
-          ),
-        ),
+      showLanlockToast(
+        context,
+        'Auth plugin not ready. Run "flutter pub get" and fully restart the app.',
+        kind: LanlockToastKind.info,
       );
       return false;
     } on PlatformException catch (e) {
       final msg = (e.message ?? e.code).toLowerCase();
       if (msg.contains('unable to establish connection on channel')) {
         if (!mounted) return false;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Auth channel unavailable. Please fully restart app after "flutter pub get".',
-            ),
-          ),
+        showLanlockToast(
+          context,
+          'Auth channel unavailable. Please fully restart app after "flutter pub get".',
+          kind: LanlockToastKind.info,
         );
         return false;
       }
       if (!mounted) return false;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Authentication failed: ${e.message ?? e.code}'),
-        ),
+      showLanlockToast(
+        context,
+        'Authentication failed: ${e.message ?? e.code}',
+        kind: LanlockToastKind.error,
       );
       return false;
     } catch (_) {
       if (!mounted) return false;
-      ScaffoldMessenger.of(
+      showLanlockToast(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Authentication failed.')));
+        'Authentication failed.',
+        kind: LanlockToastKind.error,
+      );
       return false;
     }
   }
@@ -471,14 +797,19 @@ class _ProfilesPageState extends State<ProfilesPage> {
       );
       if (path == null) return;
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Backup file saved: $path')),
+      showLanlockToast(
+        context,
+        'Backup file saved: $path',
+        kind: LanlockToastKind.success,
+        duration: const Duration(milliseconds: 4000),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      showLanlockToast(
         context,
-      ).showSnackBar(SnackBar(content: Text('Export failed: $e')));
+        'Export failed: $e',
+        kind: LanlockToastKind.error,
+      );
     }
   }
 
@@ -606,19 +937,135 @@ class _ProfilesPageState extends State<ProfilesPage> {
       );
       if (!mounted) return;
       await _refresh();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Import done: ${stats['imported']} imported, ${stats['skipped']} skipped, ${stats['failed']} failed.',
-          ),
-        ),
+      showLanlockToast(
+        context,
+        'Import done: ${stats['imported']} imported, ${stats['skipped']} skipped, ${stats['failed']} failed.',
+        kind: LanlockToastKind.success,
+        duration: const Duration(milliseconds: 4000),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      showLanlockToast(
         context,
-      ).showSnackBar(SnackBar(content: Text('Import failed: $e')));
+        'Import failed: $e',
+        kind: LanlockToastKind.error,
+      );
     }
+  }
+}
+
+class _AddMenuRow extends StatelessWidget {
+  const _AddMenuRow({
+    required this.icon,
+    required this.label,
+    required this.iconColor,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color iconColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, color: iconColor, size: 22),
+        const SizedBox(width: 12),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SpacerRow extends StatelessWidget {
+  const _SpacerRow({
+    super.key,
+    required this.reorderIndex,
+    required this.title,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final int reorderIndex;
+  final String title;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = title.trim().isEmpty ? 'Section' : title.trim();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 6, 0, 4),
+      child: Material(
+        color: Colors.deepPurpleAccent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        clipBehavior: Clip.antiAlias,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            ReorderableDragStartListener(
+              index: reorderIndex,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 10, 8, 10),
+                child: SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: Center(
+                    child: Icon(
+                      Icons.drag_indicator_rounded,
+                      size: 24,
+                      color: Colors.white.withValues(alpha: 0.38),
+                      semanticLabel: 'Drag section to reorder',
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                label.toUpperCase(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: const Color(0xFFD0BCFF),
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.85,
+                  fontSize: 11.5,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Rename section',
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 40),
+              icon: Icon(
+                Icons.edit_outlined,
+                size: 20,
+                color: Colors.white.withValues(alpha: 0.55),
+              ),
+              onPressed: onEdit,
+            ),
+            IconButton(
+              tooltip: 'Remove section',
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 40),
+              icon: Icon(
+                Icons.delete_outline_rounded,
+                size: 20,
+                color: Colors.white.withValues(alpha: 0.4),
+              ),
+              onPressed: onDelete,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -694,7 +1141,7 @@ class _EmptyProfilesState extends StatelessWidget {
           if (!hasQuery) ...[
             const SizedBox(height: 12),
             Text(
-              'Tap the Add button to create one.',
+              'Tap + to add a password or section.',
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
                 color: Colors.white60,
                 fontWeight: FontWeight.w600,
@@ -706,50 +1153,6 @@ class _EmptyProfilesState extends StatelessWidget {
       ),
     );
   }
-}
-
-Map<String, List<ProfileSummary>> _groupProfiles(
-  List<ProfileSummary> profiles,
-) {
-  final sorted = [...profiles];
-  sorted.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-
-  final grouped = <String, List<ProfileSummary>>{};
-  for (final p in sorted) {
-    final folder = _topFolder(p.name);
-    grouped.putIfAbsent(folder, () => <ProfileSummary>[]).add(p);
-  }
-  return grouped;
-}
-
-String _topFolder(String name) {
-  final normalized = name.trim();
-  final idx = normalized.indexOf('/');
-  if (idx <= 0) return 'General';
-  return normalized.substring(0, idx);
-}
-
-_PathInfo _splitProfilePath(String fullName) {
-  final normalized = fullName.trim();
-  if (normalized.isEmpty)
-    return const _PathInfo(leaf: 'Unnamed', subPath: null);
-  final parts = normalized
-      .split('/')
-      .where((p) => p.trim().isNotEmpty)
-      .toList();
-  if (parts.isEmpty) return const _PathInfo(leaf: 'Unnamed', subPath: null);
-  if (parts.length == 1) return _PathInfo(leaf: parts.first, subPath: null);
-  return _PathInfo(
-    leaf: parts.last,
-    subPath: parts.sublist(0, parts.length - 1).join('/'),
-  );
-}
-
-class _PathInfo {
-  const _PathInfo({required this.leaf, required this.subPath});
-
-  final String leaf;
-  final String? subPath;
 }
 
 class _SearchBar extends StatefulWidget {
@@ -794,7 +1197,7 @@ class _SearchBarState extends State<_SearchBar> {
         onChanged: widget.onQueryChanged,
         style: const TextStyle(color: Colors.white),
         decoration: InputDecoration(
-          hintText: 'Search profiles...',
+          hintText: 'Search passwords…',
           hintStyle: const TextStyle(color: Colors.white54),
           prefixIcon: const Icon(Icons.search_rounded, color: Colors.white60),
           filled: true,

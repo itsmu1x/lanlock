@@ -8,6 +8,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../lan_server/share_store.dart';
 import '../lan_server/server.dart';
+import 'lanlock_toast.dart';
 
 class ServerPanelPage extends StatefulWidget {
   const ServerPanelPage({super.key, required this.controller});
@@ -19,7 +20,6 @@ class ServerPanelPage extends StatefulWidget {
 }
 
 class _ServerPanelPageState extends State<ServerPanelPage> {
-  final _setPwController = TextEditingController();
   final _shareTextController = TextEditingController();
 
   bool _hasPw = false;
@@ -53,7 +53,6 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
   @override
   void dispose() {
     widget.controller.shareStore.removeListener(_onShareChanged);
-    _setPwController.dispose();
     _shareTextController.dispose();
     super.dispose();
   }
@@ -61,9 +60,7 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
   Future<void> _sendShareText() async {
     final t = _shareTextController.text.trim();
     if (t.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter some text')),
-      );
+      showLanlockToast(context, 'Enter some text', kind: LanlockToastKind.info);
       return;
     }
     setState(() => _shareBusy = true);
@@ -72,8 +69,10 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
       _shareTextController.clear();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not add: $e')),
+        showLanlockToast(
+          context,
+          'Could not add: $e',
+          kind: LanlockToastKind.error,
         );
       }
     } finally {
@@ -93,8 +92,10 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
       }
       if (bytes == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not read that file')),
+          showLanlockToast(
+            context,
+            'Could not read that file',
+            kind: LanlockToastKind.error,
           );
         }
         return;
@@ -103,8 +104,10 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
       await widget.controller.shareStore.addFile(bytes, name);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not add file: $e')),
+        showLanlockToast(
+          context,
+          'Could not add file: $e',
+          kind: LanlockToastKind.error,
         );
       }
     } finally {
@@ -116,8 +119,10 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
     final t = item.text ?? '';
     await Clipboard.setData(ClipboardData(text: t));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Copied to clipboard')),
+    showLanlockToast(
+      context,
+      'Copied to clipboard',
+      kind: LanlockToastKind.success,
     );
   }
 
@@ -127,9 +132,7 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
     final r = await OpenFile.open(p);
     if (!mounted) return;
     if (r.type != ResultType.done) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(r.message)),
-      );
+      showLanlockToast(context, r.message, kind: LanlockToastKind.error);
     }
   }
 
@@ -137,62 +140,25 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
     widget.controller.shareStore.remove(id);
   }
 
-  Future<void> _setPassword() async {
-    if (_hasPw) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Changing master password is not supported yet to avoid data loss.',
-          ),
-        ),
-      );
-      return;
-    }
-
-    final pw = _setPwController.text;
-    if (pw.trim().length < 6) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Use at least 6 characters')),
-      );
-      return;
-    }
-
-    setState(() => _busy = true);
-    try {
-      await widget.controller.setServerPassword(pw);
-      _setPwController.clear();
-      await _load();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Server password set')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
   Future<void> _toggleServer(bool on) async {
     if (on) {
       if (!_hasPw) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Set a master password first')),
+        showLanlockToast(
+          context,
+          'Set a master password from the LanLock lock screen first.',
+          kind: LanlockToastKind.info,
         );
         return;
       }
       setState(() => _busy = true);
       try {
-        await widget.controller.start(port: 8080);
+        await widget.controller.start(port: kLanHttpPort);
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to start: $e')),
+          showLanlockToast(
+            context,
+            'Failed to start: $e',
+            kind: LanlockToastKind.error,
           );
         }
       } finally {
@@ -244,15 +210,20 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
                   children: [
                     Text(
                       _status.isRunning
-                          ? 'Web access is protected by the same master password.'
-                          : 'Set a master password, then switch ON.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.white70),
+                          ? 'Web access is protected by your master password.'
+                          : _hasPw
+                          ? 'Switch ON to allow web access on your LAN.'
+                          : 'Set a master password from the LanLock lock screen, then switch ON.',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
                     ),
                     if (url != null) ...[
                       const SizedBox(height: 12),
                       SelectableText(
                         url,
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
                               color: Colors.white,
                               fontWeight: FontWeight.w900,
                             ),
@@ -264,7 +235,9 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
                           decoration: BoxDecoration(
                             color: Colors.white.withOpacity(0.06),
                             borderRadius: BorderRadius.circular(18),
-                            border: Border.all(color: Colors.white.withOpacity(0.10)),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.10),
+                            ),
                           ),
                           child: QrImageView(
                             data: url,
@@ -279,49 +252,6 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
               ),
               const SizedBox(height: 14),
               _GlassCard(
-                title: 'Master password',
-                subtitle: 'Required for web login',
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'This password is used for app encryption and web login.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.white60),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _setPwController,
-                      obscureText: true,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: InputDecoration(
-                        hintText: _hasPw ? 'Set new master password' : 'Set master password',
-                        hintStyle: const TextStyle(color: Colors.white54),
-                        filled: true,
-                        fillColor: Colors.white.withOpacity(0.06),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide(color: Colors.white.withOpacity(0.10)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: _busy || _hasPw ? null : _setPassword,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.deepPurpleAccent.withOpacity(0.95),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        child: Text(_hasPw ? 'Master Password Is Set' : 'Set Master Password'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-              _GlassCard(
                 title: 'LAN Share',
                 subtitle: _status.isRunning
                     ? 'Text & files for this session (phone ↔ browser)'
@@ -331,7 +261,9 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
                   children: [
                     Text(
                       'Shared items use the same login as the web UI. Up to 80 items; files up to ~48 MB.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.white60),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: Colors.white60),
                     ),
                     const SizedBox(height: 12),
                     TextField(
@@ -347,7 +279,9 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
                         fillColor: Colors.white.withOpacity(0.06),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide(color: Colors.white.withOpacity(0.10)),
+                          borderSide: BorderSide(
+                            color: Colors.white.withOpacity(0.10),
+                          ),
                         ),
                       ),
                     ),
@@ -358,7 +292,9 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
                           child: ElevatedButton(
                             onPressed: _shareBusy ? null : _sendShareText,
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.indigoAccent.withOpacity(0.85),
+                              backgroundColor: Colors.indigoAccent.withOpacity(
+                                0.85,
+                              ),
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
@@ -371,7 +307,9 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
                             onPressed: _shareBusy ? null : _pickShareFile,
                             style: OutlinedButton.styleFrom(
                               foregroundColor: Colors.white,
-                              side: BorderSide(color: Colors.white.withOpacity(0.25)),
+                              side: BorderSide(
+                                color: Colors.white.withOpacity(0.25),
+                              ),
                               padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
                             child: const Text('Add file'),
@@ -383,9 +321,9 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
                     Text(
                       'Inbox',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: Colors.white70,
-                            fontWeight: FontWeight.w700,
-                          ),
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Builder(
@@ -394,17 +332,23 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
                         if (items.isEmpty) {
                           return Text(
                             'Nothing yet. Other devices can send after logging in on the web page.',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.white54),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: Colors.white54),
                           );
                         }
                         return Column(
                           children: [
-                            for (final item in items) _ShareInboxTile(
-                              item: item,
-                              onCopyText: item.kind == ShareKind.text ? () => _copyShareText(item) : null,
-                              onOpenFile: item.kind == ShareKind.file ? () => _openShareFile(item) : null,
-                              onDelete: () => _removeShareItem(item.id),
-                            ),
+                            for (final item in items)
+                              _ShareInboxTile(
+                                item: item,
+                                onCopyText: item.kind == ShareKind.text
+                                    ? () => _copyShareText(item)
+                                    : null,
+                                onOpenFile: item.kind == ShareKind.file
+                                    ? () => _openShareFile(item)
+                                    : null,
+                                onDelete: () => _removeShareItem(item.id),
+                              ),
                           ],
                         );
                       },
@@ -418,7 +362,9 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
                 subtitle: 'LAN safety',
                 child: Text(
                   'Only run this on trusted networks. The web UI requires login and uses session cookies.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.white60),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: Colors.white60),
                 ),
               ),
             ],
@@ -460,7 +406,8 @@ class _ShareInboxTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final path = item.filePath;
-    final imagePreview = item.kind == ShareKind.file &&
+    final imagePreview =
+        item.kind == ShareKind.file &&
         path != null &&
         _looksLikeImage(item.label) &&
         File(path).existsSync();
@@ -480,7 +427,9 @@ class _ShareInboxTile extends StatelessWidget {
             Row(
               children: [
                 Icon(
-                  item.kind == ShareKind.text ? Icons.notes_rounded : Icons.insert_drive_file_outlined,
+                  item.kind == ShareKind.text
+                      ? Icons.notes_rounded
+                      : Icons.insert_drive_file_outlined,
                   color: Colors.white70,
                   size: 20,
                 ),
@@ -489,26 +438,31 @@ class _ShareInboxTile extends StatelessWidget {
                   child: Text(
                     item.kind == ShareKind.text ? 'Text' : item.label,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 Text(
                   _formatSize(item.sizeBytes),
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white54),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelSmall?.copyWith(color: Colors.white54),
                 ),
               ],
             ),
-            if (item.kind == ShareKind.text && (item.text ?? '').isNotEmpty) ...[
+            if (item.kind == ShareKind.text &&
+                (item.text ?? '').isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
                 item.text!,
                 maxLines: 4,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.white70),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: Colors.white70),
               ),
             ],
             if (imagePreview)
@@ -534,20 +488,26 @@ class _ShareInboxTile extends StatelessWidget {
                     onPressed: onCopyText,
                     icon: const Icon(Icons.copy_rounded, size: 18),
                     label: const Text('Copy'),
-                    style: TextButton.styleFrom(foregroundColor: Colors.lightBlueAccent),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.lightBlueAccent,
+                    ),
                   ),
                 if (onOpenFile != null)
                   TextButton.icon(
                     onPressed: onOpenFile,
                     icon: const Icon(Icons.open_in_new_rounded, size: 18),
                     label: const Text('Open'),
-                    style: TextButton.styleFrom(foregroundColor: Colors.lightGreenAccent),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.lightGreenAccent,
+                    ),
                   ),
                 TextButton.icon(
                   onPressed: onDelete,
                   icon: const Icon(Icons.delete_outline_rounded, size: 18),
                   label: const Text('Remove'),
-                  style: TextButton.styleFrom(foregroundColor: Colors.redAccent.shade100),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.redAccent.shade100,
+                  ),
                 ),
               ],
             ),
@@ -592,14 +552,16 @@ class _GlassCard extends StatelessWidget {
                     Text(
                       title,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                          ),
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.white60),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: Colors.white60),
                     ),
                   ],
                 ),
@@ -614,4 +576,3 @@ class _GlassCard extends StatelessWidget {
     );
   }
 }
-

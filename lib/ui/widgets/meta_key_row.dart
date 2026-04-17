@@ -7,12 +7,14 @@ class MetaKeyRow extends StatelessWidget {
     required this.onEdit,
     required this.onView,
     required this.onCopy,
+    required this.onDelete,
   });
 
   final String keyName;
   final VoidCallback onEdit;
   final VoidCallback onView;
   final VoidCallback onCopy;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -40,10 +42,17 @@ class MetaKeyRow extends StatelessWidget {
           const SizedBox(width: 8),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert_rounded, color: Colors.white70),
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'edit', child: Text('Edit')),
-              PopupMenuItem(value: 'view', child: Text('View')),
-              PopupMenuItem(value: 'copy', child: Text('Copy')),
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: 'edit', child: Text('Edit')),
+              const PopupMenuItem(value: 'view', child: Text('View')),
+              const PopupMenuItem(value: 'copy', child: Text('Copy')),
+              PopupMenuItem(
+                value: 'delete',
+                child: Text(
+                  'Delete',
+                  style: TextStyle(color: Colors.redAccent.shade100),
+                ),
+              ),
             ],
             onSelected: (value) {
               switch (value) {
@@ -55,6 +64,9 @@ class MetaKeyRow extends StatelessWidget {
                   break;
                 case 'copy':
                   onCopy();
+                  break;
+                case 'delete':
+                  onDelete();
                   break;
                 default:
                   break;

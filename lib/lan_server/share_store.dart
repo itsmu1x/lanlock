@@ -5,10 +5,11 @@ import 'package:path/path.dart' as p;
 
 /// In-memory + temp-file hub for LAN-only text/file sharing (not password DB).
 class LanShareStore extends ChangeNotifier {
-  LanShareStore({String? tempSubdir}) : _tempSubdir = tempSubdir ?? 'lanlock_lan_share';
+  LanShareStore({String? tempSubdir})
+    : _tempSubdir = tempSubdir ?? 'lanlock_lan_share';
 
-  static const int maxItems = 80;
-  static const int maxFileBytes = 48 * 1024 * 1024; // 48 MB
+  static const int maxItems = 32;
+  static const int maxFileBytes = 512 * 1024 * 1024; // 512 MB
 
   final String _tempSubdir;
   final List<ShareItem> _items = [];
@@ -63,7 +64,7 @@ class LanShareStore extends ChangeNotifier {
   /// Save uploaded bytes to a temp file and register.
   Future<ShareItem> addFile(Uint8List bytes, String filename) async {
     if (bytes.length > maxFileBytes) {
-      throw ArgumentError('File too large (max 48 MB).');
+      throw ArgumentError('File too large (max 512 MB).');
     }
     final safeName = filename.replaceAll(RegExp(r'[^\w.\-()\s]'), '_').trim();
     final name = safeName.isEmpty ? 'file.bin' : p.basename(safeName);
@@ -147,10 +148,10 @@ class ShareItem {
   final int createdAtMs;
 
   Map<String, dynamic> toJsonSummary() => {
-        'id': id,
-        'kind': kind == ShareKind.text ? 'text' : 'file',
-        'label': label,
-        'sizeBytes': sizeBytes,
-        'createdAtMs': createdAtMs,
-      };
+    'id': id,
+    'kind': kind == ShareKind.text ? 'text' : 'file',
+    'label': label,
+    'sizeBytes': sizeBytes,
+    'createdAtMs': createdAtMs,
+  };
 }

@@ -8,7 +8,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class ServerPasswordStore {
   const ServerPasswordStore({FlutterSecureStorage? storage})
-      : _storage = storage ?? const FlutterSecureStorage();
+    : _storage = storage ?? const FlutterSecureStorage();
 
   final FlutterSecureStorage _storage;
 
@@ -29,7 +29,9 @@ class ServerPasswordStore {
     if (pw.trim().isEmpty) throw ArgumentError('Password cannot be empty');
 
     final rnd = Random.secure();
-    final salt = Uint8List.fromList(List<int>.generate(16, (_) => rnd.nextInt(256)));
+    final salt = Uint8List.fromList(
+      List<int>.generate(16, (_) => rnd.nextInt(256)),
+    );
 
     const iters = 120000;
     final dk = _pbkdf2HmacSha256(
@@ -39,7 +41,9 @@ class ServerPasswordStore {
       dkLen: 32,
     );
 
-    final encSalt = Uint8List.fromList(List<int>.generate(16, (_) => rnd.nextInt(256)));
+    final encSalt = Uint8List.fromList(
+      List<int>.generate(16, (_) => rnd.nextInt(256)),
+    );
     const encIters = 210000;
 
     await _storage.write(key: _saltKey, value: base64Encode(salt));
@@ -104,7 +108,12 @@ class ServerPasswordStore {
     return out.toBytes();
   }
 
-  static Uint8List _f(List<int> password, Uint8List salt, int c, int blockIndex) {
+  static Uint8List _f(
+    List<int> password,
+    Uint8List salt,
+    int c,
+    int blockIndex,
+  ) {
     final intBlock = _int32be(blockIndex);
     final u1 = _hmacSha256(password, <int>[...salt, ...intBlock]);
     final t = Uint8List.fromList(u1);
@@ -127,11 +136,11 @@ class ServerPasswordStore {
   }
 
   static List<int> _int32be(int i) => <int>[
-        (i >> 24) & 0xff,
-        (i >> 16) & 0xff,
-        (i >> 8) & 0xff,
-        i & 0xff,
-      ];
+    (i >> 24) & 0xff,
+    (i >> 16) & 0xff,
+    (i >> 8) & 0xff,
+    i & 0xff,
+  ];
 
   static bool _constantTimeEquals(List<int> a, List<int> b) {
     if (a.length != b.length) return false;
@@ -171,4 +180,3 @@ class SessionManager {
     _sessions.remove(token);
   }
 }
-

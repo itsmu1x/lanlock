@@ -115,6 +115,27 @@ class _MasterLockPageState extends State<MasterLockPage> {
         localizedReason: 'Authenticate to open LanLock',
         biometricOnly: biometricOnly,
       );
+    } on LocalAuthException catch (e) {
+      // local_auth 3.x throws on dismiss/cancel instead of returning false.
+      switch (e.code) {
+        case LocalAuthExceptionCode.userCanceled:
+        case LocalAuthExceptionCode.systemCanceled:
+        case LocalAuthExceptionCode.timeout:
+          return false;
+        default:
+          break;
+      }
+      if (mounted) {
+        final detail = e.description?.trim();
+        showLanlockToast(
+          context,
+          detail != null && detail.isNotEmpty
+              ? 'Authentication error: $detail'
+              : 'Authentication error: ${e.code.name}',
+          kind: LanlockToastKind.error,
+        );
+      }
+      return false;
     } on MissingPluginException {
       return true;
     } on PlatformException catch (e) {

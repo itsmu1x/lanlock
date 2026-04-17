@@ -136,6 +136,62 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
     }
   }
 
+  /// Writes a copy of the shared file to a user-chosen path (Downloads, etc.).
+  Future<void> _saveShareFileToDisk(ShareItem item) async {
+    if (item.kind != ShareKind.file || item.filePath == null) return;
+    final src = File(item.filePath!);
+    if (!await src.exists()) {
+      if (!mounted) return;
+      showLanlockToast(
+        context,
+        'File is no longer available.',
+        kind: LanlockToastKind.error,
+      );
+      return;
+    }
+    try {
+      final bytes = await src.readAsBytes();
+      final name = item.label.trim().isNotEmpty
+          ? item.label.trim()
+          : 'shared.bin';
+      final ext = _shareFilePickerExtension(name);
+      final path = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save shared file',
+        fileName: name,
+        type: FileType.custom,
+        allowedExtensions: [ext],
+        bytes: bytes,
+      );
+      if (!mounted) return;
+      if (path != null) {
+        showLanlockToast(
+          context,
+          'Saved: $path',
+          kind: LanlockToastKind.success,
+          duration: const Duration(milliseconds: 4000),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      showLanlockToast(
+        context,
+        'Could not save file: $e',
+        kind: LanlockToastKind.error,
+      );
+    }
+  }
+
+  static String _shareFilePickerExtension(String filename) {
+    final i = filename.lastIndexOf('.');
+    if (i <= 0 || i >= filename.length - 1) return 'bin';
+    var e = filename
+        .substring(i + 1)
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]'), '');
+    if (e.isEmpty || e.length > 16) return 'bin';
+    return e;
+  }
+
   void _removeShareItem(String id) {
     widget.controller.shareStore.remove(id);
   }
@@ -260,7 +316,7 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Shared items use the same login as the web UI. Up to 80 items; files up to ~48 MB.',
+                      'Shared items use the same login as the web UI. Up to 32 items; files up to ~512 MB.',
                       style: Theme.of(
                         context,
                       ).textTheme.bodySmall?.copyWith(color: Colors.white60),
@@ -347,6 +403,9 @@ class _ServerPanelPageState extends State<ServerPanelPage> {
                                 onOpenFile: item.kind == ShareKind.file
                                     ? () => _openShareFile(item)
                                     : null,
+                                onSaveFile: item.kind == ShareKind.file
+                                    ? () => _saveShareFileToDisk(item)
+                                    : null,
                                 onDelete: () => _removeShareItem(item.id),
                               ),
                           ],
@@ -381,12 +440,14 @@ class _ShareInboxTile extends StatelessWidget {
     required this.onDelete,
     this.onCopyText,
     this.onOpenFile,
+    this.onSaveFile,
   });
 
   final ShareItem item;
   final VoidCallback onDelete;
   final VoidCallback? onCopyText;
   final VoidCallback? onOpenFile;
+  final VoidCallback? onSaveFile;
 
   static String _formatSize(int b) {
     if (b < 1024) return '$b B';
@@ -499,6 +560,15 @@ class _ShareInboxTile extends StatelessWidget {
                     label: const Text('Open'),
                     style: TextButton.styleFrom(
                       foregroundColor: Colors.lightGreenAccent,
+                    ),
+                  ),
+                if (onSaveFile != null)
+                  TextButton.icon(
+                    onPressed: onSaveFile,
+                    icon: const Icon(Icons.download_rounded, size: 18),
+                    label: const Text('Save'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.amberAccent.shade100,
                     ),
                   ),
                 TextButton.icon(

@@ -109,6 +109,41 @@ const String lanlockWebIndexHtmlV2 = r'''<!doctype html>
       color: #fecaca;
     }
 
+    .share-upload-progress{
+      display: none;
+      margin-bottom: 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #15161a;
+    }
+    .share-upload-progress.active{ display: block; }
+    .share-upload-label{
+      margin: 0 0 8px;
+      font-size: 12px;
+      color: #e4e4e7;
+      font-weight: 600;
+      word-break: break-word;
+    }
+    .share-upload-bar-wrap{
+      height: 8px;
+      border-radius: 999px;
+      background: var(--border);
+      overflow: hidden;
+    }
+    .share-upload-bar{
+      height: 100%;
+      width: 0%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #6366f1, #a5b4fc);
+      transition: width 0.12s ease-out;
+    }
+    .share-upload-meta{
+      margin: 6px 0 0;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
     @media (max-width: 760px){
       .topbar{
         flex-direction: column;
@@ -465,10 +500,17 @@ const String lanlockWebIndexHtmlV2 = r'''<!doctype html>
         </div>
         <div class="row" style="margin-bottom:12px">
           <button class="btn primary" type="button" id="btnShareSend">Send text</button>
-          <label class="btn" style="cursor:pointer; margin:0">
+          <label class="btn" id="shareFileLabel" style="cursor:pointer; margin:0">
             Upload file
             <input type="file" id="shareFile" style="display:none" />
           </label>
+        </div>
+        <div id="shareUploadProgress" class="share-upload-progress" aria-live="polite">
+          <p class="share-upload-label" id="shareUploadLabel">Uploading…</p>
+          <div class="share-upload-bar-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="shareUploadBarWrap">
+            <div class="share-upload-bar" id="shareUploadBar"></div>
+          </div>
+          <p class="share-upload-meta" id="shareUploadMeta"></p>
         </div>
         <div id="shareList" class="profiles" style="max-height:300px"></div>
       </div>
@@ -574,6 +616,96 @@ const String lanlockWebIndexHtmlV2 = r'''<!doctype html>
       if (b < 1024) return b + ' B';
       if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
       return (b/1048576).toFixed(1) + ' MB';
+    }
+
+    function setShareUploadUi(active, opts){
+      const wrap = $('shareUploadProgress');
+      const bar = $('shareUploadBar');
+      const barWrap = $('shareUploadBarWrap');
+      const meta = $('shareUploadMeta');
+      const label = $('shareUploadLabel');
+      const fileInput = $('shareFile');
+      const fileLabel = $('shareFileLabel');
+      if (!wrap || !bar || !meta || !label) return;
+      if (active){
+        wrap.classList.add('active');
+        const pct = opts && typeof opts.pct === 'number' ? opts.pct : 0;
+        bar.style.width = pct + '%';
+        if (barWrap){
+          barWrap.setAttribute('aria-valuenow', String(Math.round(pct)));
+        }
+        if (opts && opts.label != null) label.textContent = opts.label;
+        if (opts && opts.meta != null) meta.textContent = opts.meta;
+        else if (!opts || opts.meta == null) meta.textContent = '';
+        if (fileInput) fileInput.disabled = true;
+        if (fileLabel) fileLabel.style.opacity = '0.55';
+      } else {
+        wrap.classList.remove('active');
+        bar.style.width = '0%';
+        if (barWrap) barWrap.setAttribute('aria-valuenow', '0');
+        meta.textContent = '';
+        label.textContent = 'Uploading…';
+        if (fileInput) fileInput.disabled = false;
+        if (fileLabel) fileLabel.style.opacity = '';
+      }
+    }
+
+    function uploadShareFileWithProgress(file){
+      return new Promise((resolve, reject) => {
+        setShareUploadUi(true, {
+          label: 'Uploading ' + file.name + '…',
+          pct: 0,
+          meta: formatShareSize(file.size) + ' total'
+        });
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/share/file');
+        xhr.withCredentials = true;
+        xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+        xhr.setRequestHeader('X-Filename', file.name);
+        xhr.upload.onprogress = (ev) => {
+          if (ev.lengthComputable){
+            const pct = (100 * ev.loaded / ev.total);
+            const pRounded = Math.min(100, Math.round(pct));
+            setShareUploadUi(true, {
+              label: 'Uploading ' + file.name + '…',
+              pct: pct,
+              meta: pRounded + '% · ' + formatShareSize(ev.loaded) + ' / ' + formatShareSize(ev.total)
+            });
+          } else {
+            setShareUploadUi(true, {
+              label: 'Uploading ' + file.name + '…',
+              pct: 0,
+              meta: formatShareSize(ev.loaded) + ' sent…'
+            });
+          }
+        };
+        xhr.onload = () => {
+          setShareUploadUi(false);
+          if (xhr.status === 401){
+            reject(new Error('unauthorized'));
+            return;
+          }
+          if (xhr.status < 200 || xhr.status >= 300){
+            let msg = 'upload failed';
+            try{
+              const j = JSON.parse(xhr.responseText || '{}');
+              if (j.error) msg = j.error;
+            }catch(_){}
+            reject(new Error(msg));
+            return;
+          }
+          resolve();
+        };
+        xhr.onerror = () => {
+          setShareUploadUi(false);
+          reject(new Error('Network error'));
+        };
+        xhr.onabort = () => {
+          setShareUploadUi(false);
+          reject(new Error('Upload cancelled'));
+        };
+        xhr.send(file);
+      });
     }
 
     async function loadShareList(){
@@ -834,26 +966,12 @@ const String lanlockWebIndexHtmlV2 = r'''<!doctype html>
       input.value = '';
       if (!f) return;
       try{
-        const buf = await f.arrayBuffer();
-        const res = await fetch('/api/share/file', {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: {
-            'Content-Type': 'application/octet-stream',
-            'X-Filename': f.name
-          },
-          body: buf
-        });
-        const ct = res.headers.get('content-type') || '';
-        const data = ct.includes('application/json') ? await res.json().catch(()=>({})) : null;
-        if (res.status === 401) throw new Error('unauthorized');
-        if (!res.ok){
-          const msg = (data && data.error) ? data.error : 'upload failed';
-          throw new Error(msg);
-        }
+        await uploadShareFileWithProgress(f);
         toast('File uploaded');
         await loadShareList();
-      }catch(err){ toast(String(err.message || err), false); }
+      }catch(err){
+        toast(String(err.message || err), false);
+      }
     });
     $('q').addEventListener('input', () => {
       clearTimeout(window.__qTimer);

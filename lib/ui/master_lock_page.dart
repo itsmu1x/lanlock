@@ -111,7 +111,7 @@ class _MasterLockPageState extends State<MasterLockPage> {
       final biometrics = await _localAuth.getAvailableBiometrics();
       final biometricOnly = biometrics.isNotEmpty;
 
-      return _localAuth.authenticate(
+      return await _localAuth.authenticate(
         localizedReason: 'Authenticate to open LanLock',
         biometricOnly: biometricOnly,
       );
@@ -177,9 +177,9 @@ class _MasterLockPageState extends State<MasterLockPage> {
         title: Text(
           'Heads up: your vault is only here',
           style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-              ),
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
         ),
         content: SingleChildScrollView(
           child: Column(
@@ -191,9 +191,9 @@ class _MasterLockPageState extends State<MasterLockPage> {
                 'Uninstalling the app, clearing app storage, or wiping the phone removes your vault '
                 'unless you’ve exported a backup from the app.',
                 style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
-                      color: Colors.white70,
-                      height: 1.45,
-                    ),
+                  color: Colors.white70,
+                  height: 1.45,
+                ),
               ),
               const SizedBox(height: 14),
               Container(
@@ -218,9 +218,9 @@ class _MasterLockPageState extends State<MasterLockPage> {
                       child: Text(
                         'You’re in charge. That’s the trade-off for being the #1 password vault for people who want offline, LAN-friendly control.',
                         style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                              color: Colors.white.withValues(alpha: 0.88),
-                              height: 1.4,
-                            ),
+                          color: Colors.white.withValues(alpha: 0.88),
+                          height: 1.4,
+                        ),
                       ),
                     ),
                   ],
@@ -313,7 +313,10 @@ class _MasterLockPageState extends State<MasterLockPage> {
     );
   }
 
-  void _showSnack(String message, {LanlockToastKind kind = LanlockToastKind.error}) {
+  void _showSnack(
+    String message, {
+    LanlockToastKind kind = LanlockToastKind.error,
+  }) {
     if (!mounted) return;
     showLanlockToast(context, message, kind: kind);
   }
@@ -333,7 +336,9 @@ class _MasterLockPageState extends State<MasterLockPage> {
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.05),
                   borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.10),
+                  ),
                 ),
                 child: _buildPhaseContent(context),
               ),
@@ -370,19 +375,18 @@ class _MasterLockPageState extends State<MasterLockPage> {
         Text(
           isUnlock ? 'Unlock LanLock' : 'Create your master password',
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-              ),
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
         ),
         const SizedBox(height: 8),
         Text(
           isUnlock
               ? 'Enter your master password — the saved key on this device is missing or expired.'
               : 'This one password encrypts your vault. Choose something strong; we cannot reset it for you.',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Colors.white70,
-                height: 1.35,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: Colors.white70, height: 1.35),
         ),
         const SizedBox(height: 14),
         TextField(
@@ -396,12 +400,16 @@ class _MasterLockPageState extends State<MasterLockPage> {
             fillColor: Colors.white.withValues(alpha: 0.06),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
+              borderSide: BorderSide(
+                color: Colors.white.withValues(alpha: 0.10),
+              ),
             ),
             suffixIcon: IconButton(
               onPressed: () => setState(() => _showPassword = !_showPassword),
               icon: Icon(
-                _showPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                _showPassword
+                    ? Icons.visibility_off_rounded
+                    : Icons.visibility_rounded,
                 color: Colors.white70,
               ),
             ),
@@ -420,7 +428,9 @@ class _MasterLockPageState extends State<MasterLockPage> {
               fillColor: Colors.white.withValues(alpha: 0.06),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
+                borderSide: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.10),
+                ),
               ),
             ),
           ),
@@ -487,10 +497,7 @@ class _OnboardingWelcome extends StatelessWidget {
         const SizedBox(height: 16),
         Text(
           'No accounts. No cloud by default. Biometrics and LAN sharing when you want them — you hold the keys.',
-          style: t.bodyMedium?.copyWith(
-            color: Colors.white70,
-            height: 1.45,
-          ),
+          style: t.bodyMedium?.copyWith(color: Colors.white70, height: 1.45),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 22),
@@ -529,18 +536,17 @@ class _BiometricWall extends StatelessWidget {
         Text(
           "Confirm it's you",
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-              ),
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 8),
         Text(
           'Use your fingerprint or device screen lock to open LanLock.',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Colors.white70,
-                height: 1.35,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: Colors.white70, height: 1.35),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 18),
